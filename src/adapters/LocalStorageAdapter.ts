@@ -1,0 +1,1182 @@
+import { 
+  DataAdapter, 
+  User, 
+  Card, 
+  UserCard, 
+  CardPack, 
+  GachaRequest, 
+  GachaResult, 
+  GachaHistory, 
+  Statistics, 
+  UserStatistics, 
+  CardTemplate, 
+  CardRarity, 
+  CurrencyType,
+  ErrorType,
+  GachaError
+} from '../types';
+import { v4 as uuidv4 } from 'uuid';
+
+export class LocalStorageAdapter implements DataAdapter {
+  private readonly STORAGE_KEYS = {
+    USERS: 'gacha_users',
+    CARDS: 'gacha_cards',
+    USER_CARDS: 'gacha_user_cards',
+    CARD_PACKS: 'gacha_card_packs',
+    GACHA_HISTORY: 'gacha_history',
+    CARD_TEMPLATES: 'gacha_card_templates',
+    CURRENT_USER: 'gacha_current_user',
+    PITY_COUNTERS: 'gacha_pity_counters'
+  };
+
+  // 概率验证容差
+  private readonly PROBABILITY_TOLERANCE = 0.001;
+
+  // 缓存系统
+  private cache = new Map<string, { data: any; timestamp: number; ttl: number }>();
+  private readonly CACHE_TTL = {
+    STATISTICS: 5 * 60 * 1000,      // 5分钟
+    USER_STATISTICS: 2 * 60 * 1000, // 2分钟
+    CARDS: 10 * 60 * 1000,          // 10分钟
+    PACKS: 10 * 60 * 1000,          // 10分钟
+    TEMPLATES: 30 * 60 * 1000       // 30分钟
+  };
+
+  constructor() {
+    this.initializeData();
+  }
+
+  private initializeData() {
+    // 初始化默认数据
+    if (!this.getFromStorage(this.STORAGE_KEYS.USERS)) {
+      this.setToStorage(this.STORAGE_KEYS.USERS, []);
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.CARDS)) {
+      this.initializeCards();
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.USER_CARDS)) {
+      this.setToStorage(this.STORAGE_KEYS.USER_CARDS, []);
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.CARD_PACKS)) {
+      this.initializeCardPacks();
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.GACHA_HISTORY)) {
+      this.setToStorage(this.STORAGE_KEYS.GACHA_HISTORY, []);
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.CARD_TEMPLATES)) {
+      this.initializeCardTemplates();
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.PITY_COUNTERS)) {
+      this.setToStorage(this.STORAGE_KEYS.PITY_COUNTERS, {});
+    }
+
+    // 数据迁移：确保现有用户有gachaByRarity字段
+    this.migrateUserStatistics();
+  }
+
+  private migrateUserStatistics() {
+    const users = this.getFromStorage<User[]>(this.STORAGE_KEYS.USERS) || [];
+    let hasChanges = false;
+
+    users.forEach(user => {
+      if (!user.statistics.gachaByRarity) {
+        user.statistics.gachaByRarity = {
+          [CardRarity.N]: 0,
+          [CardRarity.R]: 0,
+          [CardRarity.SR]: 0,
+          [CardRarity.SSR]: 0,
+          [CardRarity.UR]: 0,
+          [CardRarity.LR]: 0
+        };
+        hasChanges = true;
+      }
+      if (!user.statistics.packGachaSummary) {
+        user.statistics.packGachaSummary = [];
+        hasChanges = true;
+      }
+    });
+
+    if (hasChanges) {
+      this.setToStorage(this.STORAGE_KEYS.USERS, users);
+    }
+  }
+
+  private getFromStorage<T>(key: string): T | null {
+    try {
+      const data = localStorage.getItem(key);
+      return data ? JSON.parse(data) : null;
+    } catch (error) {
+      console.error(`Error reading from localStorage key ${key}:`, error);
+      return null;
+    }
+  }
+
+  private setToStorage<T>(key: string, data: T): void {
+    try {
+      localStorage.setItem(key, JSON.stringify(data));
+    } catch (error) {
+      console.error(`Error writing to localStorage key ${key}:`, error);
+    }
+  }
+
+  // 概率验证方法
+  private validateCardProbabilities(pack: CardPack): void {
+    const availableCards = pack.availableCards;
+    const probabilities = pack.cardProbabilities;
+    
+    // 检查所有可用卡片都有概率
+    for (const cardId of availableCards) {
+      if (!(cardId in probabilities)) {
+        throw {
+          type: ErrorType.INVALID_PROBABILITY,
+          message: `Card ${cardId} is available but has no probability assigned`,
+          details: { cardId, availableCards, probabilities }
+        } as GachaError;
+      }
+    }
+    
+    // 检查概率总和是否为1.0（允许容差）
+    const totalProbability = availableCards.reduce((sum, cardId) => {
+      const prob = probabilities[cardId];
+      if (prob < 0 || prob > 1) {
+        throw {
+          type: ErrorType.INVALID_PROBABILITY,
+          message: `Invalid probability value for card ${cardId}: ${prob}`,
+          details: { cardId, probability: prob }
+        } as GachaError;
+      }
+      return sum + prob;
+    }, 0);
+    
+    if (Math.abs(totalProbability - 1.0) > this.PROBABILITY_TOLERANCE) {
+      throw {
+        type: ErrorType.INVALID_PROBABILITY,
+        message: `Total probability must be 1.0, got ${totalProbability.toFixed(4)}`,
+        details: { totalProbability, availableCards, probabilities }
+      } as GachaError;
+    }
+  }
+
+  // 缓存管理方法
+  private getFromCache<T>(key: string): T | null {
+    const cached = this.cache.get(key);
+    if (!cached) return null;
+    
+    const now = Date.now();
+    if (now - cached.timestamp > cached.ttl) {
+      this.cache.delete(key);
+      return null;
+    }
+    
+    return cached.data as T;
+  }
+
+  private setToCache<T>(key: string, data: T, ttl: number): void {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl
+    });
+  }
+
+  private invalidateCache(pattern: string): void {
+    for (const key of this.cache.keys()) {
+      if (key.includes(pattern)) {
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  // 保底系统验证
+  private validatePitySystem(pack: CardPack): void {
+    if (!pack.pitySystem) return;
+    
+    const { pitySystem } = pack;
+    
+    // 检查保底卡片是否在可用卡片中
+    for (const cardId of pitySystem.guaranteedCards) {
+      if (!pack.availableCards.includes(cardId)) {
+        throw {
+          type: ErrorType.PITY_SYSTEM_ERROR,
+          message: `Guaranteed card ${cardId} is not in available cards`,
+          details: { cardId, availableCards: pack.availableCards, guaranteedCards: pitySystem.guaranteedCards }
+        } as GachaError;
+      }
+    }
+    
+    // 检查保底权重（如果提供）
+    if (pitySystem.guaranteedCardWeights) {
+      if (pitySystem.guaranteedCardWeights.length !== pitySystem.guaranteedCards.length) {
+        throw {
+          type: ErrorType.PITY_SYSTEM_ERROR,
+          message: 'Guaranteed card weights length must match guaranteed cards length',
+          details: { 
+            weightsLength: pitySystem.guaranteedCardWeights.length, 
+            cardsLength: pitySystem.guaranteedCards.length 
+          }
+        } as GachaError;
+      }
+      
+      // 检查权重是否为正数
+      for (let i = 0; i < pitySystem.guaranteedCardWeights.length; i++) {
+        if (pitySystem.guaranteedCardWeights[i] <= 0) {
+          throw {
+            type: ErrorType.PITY_SYSTEM_ERROR,
+            message: `Invalid weight for guaranteed card ${pitySystem.guaranteedCards[i]}: ${pitySystem.guaranteedCardWeights[i]}`,
+            details: { cardId: pitySystem.guaranteedCards[i], weight: pitySystem.guaranteedCardWeights[i] }
+          } as GachaError;
+        }
+      }
+    }
+  }
+
+  // 用户相关
+  async getUser(id: string): Promise<User | null> {
+    const users = this.getFromStorage<User[]>(this.STORAGE_KEYS.USERS) || [];
+    return users.find(user => user.id === id) || null;
+  }
+
+  async updateUser(user: User): Promise<void> {
+    const users = this.getFromStorage<User[]>(this.STORAGE_KEYS.USERS) || [];
+    const index = users.findIndex(u => u.id === user.id);
+    if (index !== -1) {
+      users[index] = { ...user, updatedAt: new Date() };
+      this.setToStorage(this.STORAGE_KEYS.USERS, users);
+    }
+  }
+
+  async createUser(userData: Omit<User, 'id' | 'createdAt' | 'updatedAt'>): Promise<User> {
+    const users = this.getFromStorage<User[]>(this.STORAGE_KEYS.USERS) || [];
+    const newUser: User = {
+      ...userData,
+      id: uuidv4(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+    users.push(newUser);
+    this.setToStorage(this.STORAGE_KEYS.USERS, users);
+    return newUser;
+  }
+
+  // 卡牌相关
+  async getCards(): Promise<Card[]> {
+    const cacheKey = 'cards';
+    const cached = this.getFromCache<Card[]>(cacheKey);
+    if (cached) return cached;
+    
+    const cards = this.getFromStorage<Card[]>(this.STORAGE_KEYS.CARDS) || [];
+    this.setToCache(cacheKey, cards, this.CACHE_TTL.CARDS);
+    return cards;
+  }
+
+  async getCard(id: string): Promise<Card | null> {
+    const cards = await this.getCards();
+    return cards.find(card => card.id === id) || null;
+  }
+
+  async updateCard(card: Card): Promise<void> {
+    const cards = await this.getCards();
+    const index = cards.findIndex(c => c.id === card.id);
+    if (index !== -1) {
+      cards[index] = { ...card, updatedAt: new Date() };
+    } else {
+      cards.push({ ...card, createdAt: new Date(), updatedAt: new Date() });
+    }
+    this.setToStorage(this.STORAGE_KEYS.CARDS, cards);
+    this.invalidateCache('cards');
+  }
+
+  async deleteCard(id: string): Promise<void> {
+    const cards = await this.getCards();
+    const filteredCards = cards.filter(c => c.id !== id);
+    this.setToStorage(this.STORAGE_KEYS.CARDS, filteredCards);
+    this.invalidateCache('cards');
+  }
+
+  async getUserCards(userId: string): Promise<UserCard[]> {
+    const userCards = this.getFromStorage<UserCard[]>(this.STORAGE_KEYS.USER_CARDS) || [];
+    const filteredCards = userCards.filter(uc => uc.userId === userId);
+    
+    // 补充卡牌信息
+    const cards = await this.getCards();
+    return filteredCards.map(uc => ({
+      ...uc,
+      card: cards.find(c => c.id === uc.cardId)
+    }));
+  }
+
+  async updateUserCard(userCard: UserCard): Promise<void> {
+    const userCards = this.getFromStorage<UserCard[]>(this.STORAGE_KEYS.USER_CARDS) || [];
+    const index = userCards.findIndex(uc => uc.id === userCard.id);
+    if (index !== -1) {
+      userCards[index] = userCard;
+    } else {
+      userCards.push(userCard);
+    }
+    this.setToStorage(this.STORAGE_KEYS.USER_CARDS, userCards);
+  }
+
+  // 卡包相关
+  async getCardPacks(): Promise<CardPack[]> {
+    const cacheKey = 'packs';
+    const cached = this.getFromCache<CardPack[]>(cacheKey);
+    if (cached) return cached;
+    
+    const packs = this.getFromStorage<CardPack[]>(this.STORAGE_KEYS.CARD_PACKS) || [];
+    this.setToCache(cacheKey, packs, this.CACHE_TTL.PACKS);
+    return packs;
+  }
+
+  async getCardPack(id: string): Promise<CardPack | null> {
+    const packs = await this.getCardPacks();
+    return packs.find(pack => pack.id === id) || null;
+  }
+
+  async updateCardPack(pack: CardPack): Promise<void> {
+    // 验证卡包数据
+    this.validateCardProbabilities(pack);
+    this.validatePitySystem(pack);
+    
+    const packs = await this.getCardPacks();
+    const index = packs.findIndex(p => p.id === pack.id);
+    if (index !== -1) {
+      packs[index] = { ...pack, updatedAt: new Date() };
+    } else {
+      packs.push({ ...pack, createdAt: new Date(), updatedAt: new Date() });
+    }
+    this.setToStorage(this.STORAGE_KEYS.CARD_PACKS, packs);
+    this.invalidateCache('packs');
+  }
+
+  async deleteCardPack(id: string): Promise<void> {
+    const packs = await this.getCardPacks();
+    const filteredPacks = packs.filter(p => p.id !== id);
+    this.setToStorage(this.STORAGE_KEYS.CARD_PACKS, filteredPacks);
+    this.invalidateCache('packs');
+  }
+
+  // 抽卡相关
+  async performGacha(request: GachaRequest): Promise<GachaResult> {
+    const pack = await this.getCardPack(request.packId);
+    if (!pack) {
+      throw {
+        type: ErrorType.CARD_PACK_NOT_FOUND,
+        message: `Card pack ${request.packId} not found`,
+        details: { packId: request.packId }
+      } as GachaError;
+    }
+
+    const user = await this.getUser(request.userId);
+    if (!user) {
+      throw {
+        type: ErrorType.USER_NOT_FOUND,
+        message: `User ${request.userId} not found`,
+        details: { userId: request.userId }
+      } as GachaError;
+    }
+
+    // 检查货币是否足够
+    const totalCost = pack.cost * request.quantity;
+    if (user.currencies[pack.currency] < totalCost) {
+      throw {
+        type: ErrorType.INSUFFICIENT_CURRENCY,
+        message: `Insufficient currency. Required: ${totalCost} ${pack.currency}, Available: ${user.currencies[pack.currency]}`,
+        details: { 
+          required: totalCost, 
+          available: user.currencies[pack.currency], 
+          currency: pack.currency 
+        }
+      } as GachaError;
+    }
+
+    // 获取保底计数
+    const pityCounters = this.getFromStorage<Record<string, Record<string, number>>>(this.STORAGE_KEYS.PITY_COUNTERS) || {};
+    const userPityCounters = pityCounters[request.userId] || {};
+    let currentPity = userPityCounters[request.packId] || 0;
+
+    // 执行抽卡
+    const cards: Card[] = [];
+    let pityTriggered = false;
+
+    for (let i = 0; i < request.quantity; i++) {
+      const result = await this.drawSingleCard(pack, currentPity);
+      cards.push(result.card);
+      
+      if (result.pityTriggered) {
+        pityTriggered = true;
+        currentPity = 0;
+      } else {
+        currentPity++;
+      }
+    }
+
+    // 更新保底计数
+    if (!pityCounters[request.userId]) {
+      pityCounters[request.userId] = {};
+    }
+    pityCounters[request.userId][request.packId] = currentPity;
+    this.setToStorage(this.STORAGE_KEYS.PITY_COUNTERS, pityCounters);
+
+    // 处理重复卡牌
+    const { newCards, duplicates } = await this.processDuplicates(request.userId, cards);
+
+    // 扣除货币
+    user.currencies[pack.currency] -= totalCost;
+    
+    // 更新用户统计
+    user.statistics.totalGachas += request.quantity;
+    user.statistics.totalSpent[pack.currency] += totalCost;
+    user.statistics.lastGachaAt = new Date();
+    
+    // 更新卡牌统计
+    cards.forEach(card => {
+      user.statistics.cardsByRarity[card.rarity] = (user.statistics.cardsByRarity[card.rarity] || 0) + 1;
+      user.statistics.gachaByRarity[card.rarity] = (user.statistics.gachaByRarity[card.rarity] || 0) + 1;
+    });
+
+    await this.updateUser(user);
+
+    // 创建抽卡结果
+    const result: GachaResult = {
+      cards,
+      newCards,
+      duplicates,
+      currencySpent: totalCost,
+      currencyType: pack.currency,
+      pityTriggered,
+      timestamp: new Date()
+    };
+
+    // 记录抽卡历史（持久化卡包信息）
+    await this.recordGachaHistory(request.userId, request.packId, request.quantity, result, pack);
+
+    // 清除相关缓存
+    this.invalidateCache('global_statistics');
+    this.invalidateCache(`user_statistics_${request.userId}`);
+
+    return result;
+  }
+
+  private async drawSingleCard(pack: CardPack, currentPity: number): Promise<{ card: Card; pityTriggered: boolean }> {
+    let pityTriggered = false;
+    
+    // 检查是否触发保底
+    if (pack.pitySystem && currentPity >= pack.pitySystem.maxPity) {
+      pityTriggered = true;
+      const card = await this.getRandomGuaranteedCard(pack);
+      return { card, pityTriggered };
+    }
+
+    // 按卡片概率抽取
+    const card = await this.drawCardByProbability(pack, currentPity);
+    
+    return { card, pityTriggered };
+  }
+
+  private async drawCardByProbability(pack: CardPack, currentPity: number): Promise<Card> {
+    let random = Math.random();
+    
+    // 应用软保底逻辑
+    if (pack.pitySystem && currentPity >= pack.pitySystem.softPityStart) {
+      const pityBonus = this.calculatePityBonus(currentPity, pack.pitySystem.softPityStart, pack.pitySystem.maxPity);
+      random = this.applyPityBonus(random, pityBonus, pack.pitySystem.guaranteedCards);
+    }
+
+    // 按卡片概率抽取
+    const cardEntries = Object.entries(pack.cardProbabilities)
+      .filter(([cardId]) => pack.availableCards.includes(cardId))
+      .sort(([, a], [, b]) => b - a);
+
+    let cumulativeProbability = 0;
+    for (const [cardId, probability] of cardEntries) {
+      cumulativeProbability += probability;
+      if (random <= cumulativeProbability) {
+        const card = await this.getCard(cardId);
+        if (card) {
+          return card;
+        }
+      }
+    }
+
+    // 如果没有抽到任何卡片，返回第一张可用卡片
+    const firstAvailableCard = await this.getCard(pack.availableCards[0]);
+    if (!firstAvailableCard) {
+      throw {
+        type: ErrorType.NO_AVAILABLE_CARDS,
+        message: `No available cards in pack ${pack.id}`,
+        details: { packId: pack.id, availableCards: pack.availableCards }
+      } as GachaError;
+    }
+    return firstAvailableCard;
+  }
+
+  private calculatePityBonus(currentPity: number, softPityStart: number, maxPity: number): number {
+    const progress = (currentPity - softPityStart) / (maxPity - softPityStart);
+    return Math.min(progress * 0.5, 0.5);
+  }
+
+  private applyPityBonus(random: number, bonus: number, guaranteedCards: string[]): number {
+    // 软保底增加高稀有度卡片的概率
+    return random * (1 - bonus * 0.5);
+  }
+
+  private getRarityWeight(rarity: CardRarity): number {
+    const weights = {
+      [CardRarity.N]: 0.1,
+      [CardRarity.R]: 0.2,
+      [CardRarity.SR]: 0.4,
+      [CardRarity.SSR]: 0.6,
+      [CardRarity.UR]: 0.8,
+      [CardRarity.LR]: 1.0
+    };
+    return weights[rarity];
+  }
+
+  private async getRandomGuaranteedCard(pack: CardPack): Promise<Card> {
+    if (!pack.pitySystem || pack.pitySystem.guaranteedCards.length === 0) {
+      throw {
+        type: ErrorType.PITY_SYSTEM_ERROR,
+        message: `No guaranteed cards configured for pack ${pack.id}`,
+        details: { packId: pack.id, pitySystem: pack.pitySystem }
+      } as GachaError;
+    }
+
+    // 使用权重选择保底卡片（如果提供权重）
+    let selectedCardId: string;
+    if (pack.pitySystem.guaranteedCardWeights && pack.pitySystem.guaranteedCardWeights.length > 0) {
+      // 按权重随机选择
+      const totalWeight = pack.pitySystem.guaranteedCardWeights.reduce((sum, weight) => sum + weight, 0);
+      let random = Math.random() * totalWeight;
+      
+      for (let i = 0; i < pack.pitySystem.guaranteedCards.length; i++) {
+        random -= pack.pitySystem.guaranteedCardWeights[i];
+        if (random <= 0) {
+          selectedCardId = pack.pitySystem.guaranteedCards[i];
+          break;
+        }
+      }
+      selectedCardId = pack.pitySystem.guaranteedCards[pack.pitySystem.guaranteedCards.length - 1];
+    } else {
+      // 均等概率选择
+      const randomIndex = Math.floor(Math.random() * pack.pitySystem.guaranteedCards.length);
+      selectedCardId = pack.pitySystem.guaranteedCards[randomIndex];
+    }
+
+    const card = await this.getCard(selectedCardId);
+    
+    if (!card) {
+      throw {
+        type: ErrorType.PITY_SYSTEM_ERROR,
+        message: `Guaranteed card ${selectedCardId} not found in pack ${pack.id}`,
+        details: { cardId: selectedCardId, packId: pack.id }
+      } as GachaError;
+    }
+    
+    return card;
+  }
+
+  private async processDuplicates(
+    userId: string,
+    cards: Card[]
+  ): Promise<{ newCards: Card[]; duplicates: { card: Card; count: number }[] }> {
+    const userCards = await this.getUserCards(userId);
+    const existingCardIds = new Set(userCards.map(uc => uc.cardId));
+    
+    const cardCounts = new Map<string, number>();
+    const uniqueCards = new Map<string, Card>();
+
+    cards.forEach(card => {
+      cardCounts.set(card.id, (cardCounts.get(card.id) || 0) + 1);
+      uniqueCards.set(card.id, card);
+    });
+
+    const newCards: Card[] = [];
+    const duplicates: { card: Card; count: number }[] = [];
+
+    for (const [cardId, count] of cardCounts) {
+      const card = uniqueCards.get(cardId)!;
+      
+      if (existingCardIds.has(cardId)) {
+        duplicates.push({ card, count });
+        // 更新已有卡牌数量
+        const existingUserCard = userCards.find(uc => uc.cardId === cardId);
+        if (existingUserCard) {
+          existingUserCard.quantity += count;
+          await this.updateUserCard(existingUserCard);
+        }
+      } else {
+        newCards.push(card);
+        // 创建新的用户卡牌
+        const newUserCard: UserCard = {
+          id: uuidv4(),
+          userId,
+          cardId,
+          quantity: count,
+          obtainedAt: new Date()
+        };
+        await this.updateUserCard(newUserCard);
+      }
+    }
+
+    return { newCards, duplicates };
+  }
+
+  private async recordGachaHistory(
+    userId: string,
+    packId: string,
+    quantity: number,
+    result: GachaResult,
+    pack: CardPack
+  ): Promise<void> {
+    const history = this.getFromStorage<GachaHistory[]>(this.STORAGE_KEYS.GACHA_HISTORY) || [];
+    const newRecord: GachaHistory = {
+      id: uuidv4(),
+      userId,
+      packId,
+      packName: pack.name,
+      packDescription: pack.description,
+      packCoverImageUrl: pack.coverImageUrl,
+      packCurrency: pack.currency,
+      packCost: pack.cost,
+      quantity,
+      result,
+      createdAt: new Date()
+    };
+    history.push(newRecord);
+    this.setToStorage(this.STORAGE_KEYS.GACHA_HISTORY, history);
+  }
+
+  async getGachaHistory(userId: string): Promise<GachaHistory[]> {
+    const history = this.getFromStorage<GachaHistory[]>(this.STORAGE_KEYS.GACHA_HISTORY) || [];
+    return history.filter(h => h.userId === userId).sort((a, b) => 
+      new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+    );
+  }
+
+  // 统计相关
+  async getStatistics(): Promise<Statistics> {
+    const cacheKey = 'global_statistics';
+    const cached = this.getFromCache<Statistics>(cacheKey);
+    if (cached) return cached;
+    
+    const users = this.getFromStorage<User[]>(this.STORAGE_KEYS.USERS) || [];
+    const history = this.getFromStorage<GachaHistory[]>(this.STORAGE_KEYS.GACHA_HISTORY) || [];
+    const packs = await this.getCardPacks();
+
+    const totalUsers = users.length;
+    const totalGachas = history.reduce((sum, h) => sum + h.quantity, 0);
+    
+    const totalRevenue: Record<CurrencyType, number> = {
+      [CurrencyType.GOLD]: 0,
+      [CurrencyType.TICKET]: 0,
+      [CurrencyType.PREMIUM]: 0
+    };
+
+    const cardDistribution: Record<CardRarity, number> = {
+      [CardRarity.N]: 0,
+      [CardRarity.R]: 0,
+      [CardRarity.SR]: 0,
+      [CardRarity.SSR]: 0,
+      [CardRarity.UR]: 0,
+      [CardRarity.LR]: 0
+    };
+
+    history.forEach(h => {
+      totalRevenue[h.result.currencyType] += h.result.currencySpent;
+      h.result.cards.forEach(card => {
+        cardDistribution[card.rarity]++;
+      });
+    });
+
+    const packCounts = new Map<string, number>();
+    history.forEach(h => {
+      packCounts.set(h.packId, (packCounts.get(h.packId) || 0) + 1);
+    });
+
+    const popularPacks = Array.from(packCounts.entries())
+      .map(([packId, count]) => ({
+        packId,
+        count,
+        name: packs.find(p => p.id === packId)?.name || 'Unknown'
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    // 简化的活跃度统计
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const userActivity = {
+      daily: users.filter(u => u.statistics.lastGachaAt && new Date(u.statistics.lastGachaAt) > oneDayAgo).length,
+      weekly: users.filter(u => u.statistics.lastGachaAt && new Date(u.statistics.lastGachaAt) > oneWeekAgo).length,
+      monthly: users.filter(u => u.statistics.lastGachaAt && new Date(u.statistics.lastGachaAt) > oneMonthAgo).length
+    };
+
+    const statistics = {
+      totalUsers,
+      totalGachas,
+      totalRevenue,
+      cardDistribution,
+      popularPacks,
+      userActivity
+    };
+    
+    this.setToCache(cacheKey, statistics, this.CACHE_TTL.STATISTICS);
+    return statistics;
+  }
+
+  async getUserStatistics(userId: string): Promise<UserStatistics> {
+    const cacheKey = `user_statistics_${userId}`;
+    const cached = this.getFromCache<UserStatistics>(cacheKey);
+    if (cached) return cached;
+    
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw {
+        type: ErrorType.USER_NOT_FOUND,
+        message: `User ${userId} not found`,
+        details: { userId }
+      } as GachaError;
+    }
+    
+    // 从历史记录聚合统计信息
+    await this.updateUserStatisticsFromHistory(user);
+    
+    this.setToCache(cacheKey, user.statistics, this.CACHE_TTL.USER_STATISTICS);
+    return user.statistics;
+  }
+
+  public async updateUserStatisticsFromHistory(user: User): Promise<void> {
+    const history = await this.getGachaHistory(user.id);
+    
+    // 重置统计
+    user.statistics.totalGachas = 0;
+    user.statistics.totalSpent = {
+      [CurrencyType.GOLD]: 0,
+      [CurrencyType.TICKET]: 0,
+      [CurrencyType.PREMIUM]: 0
+    };
+    user.statistics.cardsByRarity = {
+      [CardRarity.N]: 0,
+      [CardRarity.R]: 0,
+      [CardRarity.SR]: 0,
+      [CardRarity.SSR]: 0,
+      [CardRarity.UR]: 0,
+      [CardRarity.LR]: 0
+    };
+    user.statistics.gachaByRarity = {
+      [CardRarity.N]: 0,
+      [CardRarity.R]: 0,
+      [CardRarity.SR]: 0,
+      [CardRarity.SSR]: 0,
+      [CardRarity.UR]: 0,
+      [CardRarity.LR]: 0
+    };
+
+    // 聚合卡包统计
+    const packStats = new Map<string, {
+      packId: string;
+      packName: string;
+      packDescription: string;
+      packCoverImageUrl?: string;
+      currency: CurrencyType;
+      cost: number;
+      totalGachas: number;
+      lastGachaAt?: Date;
+    }>();
+
+    // 从历史记录聚合数据
+    history.forEach(record => {
+      // 总抽卡次数
+      user.statistics.totalGachas += record.quantity;
+      
+      // 总花费
+      user.statistics.totalSpent[record.packCurrency] += record.result.currencySpent;
+      
+      // 按稀有度统计
+      record.result.cards.forEach(card => {
+        user.statistics.cardsByRarity[card.rarity]++;
+        user.statistics.gachaByRarity[card.rarity]++;
+      });
+      
+      // 卡包统计
+      const existing = packStats.get(record.packId);
+      if (existing) {
+        existing.totalGachas += record.quantity;
+        if (!existing.lastGachaAt || new Date(record.createdAt) > new Date(existing.lastGachaAt)) {
+          existing.lastGachaAt = record.createdAt;
+        }
+      } else {
+        packStats.set(record.packId, {
+          packId: record.packId,
+          packName: record.packName,
+          packDescription: record.packDescription,
+          packCoverImageUrl: record.packCoverImageUrl,
+          currency: record.packCurrency,
+          cost: record.packCost,
+          totalGachas: record.quantity,
+          lastGachaAt: record.createdAt
+        });
+      }
+      
+      // 更新最后抽卡时间
+      if (!user.statistics.lastGachaAt || new Date(record.createdAt) > new Date(user.statistics.lastGachaAt)) {
+        user.statistics.lastGachaAt = record.createdAt;
+      }
+    });
+
+    // 更新卡包汇总
+    user.statistics.packGachaSummary = Array.from(packStats.values())
+      .sort((a, b) => new Date(b.lastGachaAt || 0).getTime() - new Date(a.lastGachaAt || 0).getTime());
+
+    // 保存更新后的用户数据
+    await this.updateUser(user);
+  }
+
+  // 配置相关
+  async getCardTemplates(): Promise<CardTemplate[]> {
+    return this.getFromStorage<CardTemplate[]>(this.STORAGE_KEYS.CARD_TEMPLATES) || [];
+  }
+
+  async updateCardTemplate(template: CardTemplate): Promise<void> {
+    const templates = this.getFromStorage<CardTemplate[]>(this.STORAGE_KEYS.CARD_TEMPLATES) || [];
+    const index = templates.findIndex(t => t.id === template.id);
+    if (index !== -1) {
+      templates[index] = template;
+    } else {
+      templates.push(template);
+    }
+    this.setToStorage(this.STORAGE_KEYS.CARD_TEMPLATES, templates);
+  }
+
+  // 用户管理辅助方法
+  async getCurrentUser(): Promise<User | null> {
+    const currentUserId = this.getFromStorage<string>(this.STORAGE_KEYS.CURRENT_USER);
+    return currentUserId ? await this.getUser(currentUserId) : null;
+  }
+
+  async setCurrentUser(userId: string): Promise<void> {
+    this.setToStorage(this.STORAGE_KEYS.CURRENT_USER, userId);
+  }
+
+  async logout(): Promise<void> {
+    localStorage.removeItem(this.STORAGE_KEYS.CURRENT_USER);
+  }
+
+  async createDefaultUser(): Promise<User> {
+    const defaultUser = await this.createUser({
+      username: 'Player',
+      email: 'player@example.com',
+      currencies: {
+        [CurrencyType.GOLD]: 10000,
+        [CurrencyType.TICKET]: 10,
+        [CurrencyType.PREMIUM]: 0
+      },
+      statistics: {
+        totalGachas: 0,
+        totalSpent: {
+          [CurrencyType.GOLD]: 0,
+          [CurrencyType.TICKET]: 0,
+          [CurrencyType.PREMIUM]: 0
+        },
+        cardsByRarity: {
+          [CardRarity.N]: 0,
+          [CardRarity.R]: 0,
+          [CardRarity.SR]: 0,
+          [CardRarity.SSR]: 0,
+          [CardRarity.UR]: 0,
+          [CardRarity.LR]: 0
+        },
+        gachaByRarity: {
+          [CardRarity.N]: 0,
+          [CardRarity.R]: 0,
+          [CardRarity.SR]: 0,
+          [CardRarity.SSR]: 0,
+          [CardRarity.UR]: 0,
+          [CardRarity.LR]: 0
+        },
+        packGachaSummary: [],
+        pityCounters: {}
+      }
+    });
+
+    await this.setCurrentUser(defaultUser.id);
+    return defaultUser;
+  }
+
+  // 数据初始化方法
+  private initializeCards(): void {
+    const defaultCards: Card[] = [
+      // N卡 - 普通战士
+      {
+        id: 'n-1',
+        name: '普通战士',
+        description: '一名普通的战士，拥有基础的战斗能力',
+        rarity: CardRarity.N,
+        imageUrl: '/assets/card_n.png',
+        attributes: { attack: 100, defense: 80 },
+        templateId: 'basic-card',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      // R卡 - 精英骑士
+      {
+        id: 'r-1',
+        name: '精英骑士',
+        description: '训练有素的骑士，装备精良的铠甲',
+        rarity: CardRarity.R,
+        imageUrl: '/assets/card_r.png',
+        attributes: { attack: 200, defense: 150 },
+        templateId: 'basic-card',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      // SR卡 - 魔法师
+      {
+        id: 'sr-1',
+        name: '高级魔法师',
+        description: '掌握强大魔法的法师，能够施展毁灭性法术',
+        rarity: CardRarity.SR,
+        imageUrl: '/assets/card_sr.png',
+        attributes: { attack: 400, defense: 300 },
+        templateId: 'basic-card',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      // SSR卡 - 圣骑士
+      {
+        id: 'ssr-1',
+        name: '圣骑士',
+        description: '神圣的骑士，拥有神圣力量的庇护',
+        rarity: CardRarity.SSR,
+        imageUrl: '/assets/card_ssr.png',
+        attributes: { attack: 800, defense: 600 },
+        templateId: 'basic-card',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      // UR卡 - 龙骑士
+      {
+        id: 'ur-1',
+        name: '龙骑士',
+        description: '驾驭巨龙的骑士，拥有无与伦比的力量',
+        rarity: CardRarity.UR,
+        imageUrl: '/assets/card_ur.png',
+        attributes: { attack: 1500, defense: 1200 },
+        templateId: 'basic-card',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      // LR卡 - 龙王
+      {
+        id: 'lr-1',
+        name: '龙王',
+        description: '传说中的龙王，拥有毁天灭地的力量',
+        rarity: CardRarity.LR,
+        imageUrl: '/assets/card_lr.png',
+        attributes: { attack: 3000, defense: 2500, special: 'Dragon Breath' },
+        templateId: 'legendary-card',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    this.setToStorage(this.STORAGE_KEYS.CARDS, defaultCards);
+  }
+
+  private initializeCardPacks(): void {
+    const cards = this.getFromStorage<Card[]>(this.STORAGE_KEYS.CARDS) || [];
+    const cardIds = cards.map(c => c.id);
+
+    // 为每张卡片计算概率
+    const calculateCardProbabilities = (totalCards: Card[], rarityWeights: Record<CardRarity, number>) => {
+      const probabilities: Record<string, number> = {};
+      const rarityGroups = totalCards.reduce((acc, card) => {
+        if (!acc[card.rarity]) acc[card.rarity] = [];
+        acc[card.rarity].push(card.id);
+        return acc;
+      }, {} as Record<CardRarity, string[]>);
+
+      Object.entries(rarityWeights).forEach(([rarity, weight]) => {
+        const cardsInRarity = rarityGroups[rarity as CardRarity] || [];
+        const individualProbability = cardsInRarity.length > 0 ? weight / cardsInRarity.length : 0;
+        cardsInRarity.forEach(cardId => {
+          probabilities[cardId] = individualProbability;
+        });
+      });
+
+      return probabilities;
+    };
+
+    // 基础卡包的稀有度权重
+    const basicRarityWeights = {
+      [CardRarity.N]: 0.60,
+      [CardRarity.R]: 0.25,
+      [CardRarity.SR]: 0.10,
+      [CardRarity.SSR]: 0.04,
+      [CardRarity.UR]: 0.009,
+      [CardRarity.LR]: 0.001
+    };
+
+    // 高级卡包的稀有度权重
+    const premiumRarityWeights = {
+      [CardRarity.N]: 0.45,
+      [CardRarity.R]: 0.35,
+      [CardRarity.SR]: 0.15,
+      [CardRarity.SSR]: 0.04,
+      [CardRarity.UR]: 0.009,
+      [CardRarity.LR]: 0.001
+    };
+
+    const defaultPacks: CardPack[] = [
+      {
+        id: 'standard-pack',
+        name: '标准卡包',
+        description: '包含各种稀有度卡牌的标准卡包',
+        coverImageUrl: '/assets/pack_standard.png',
+        cost: 100,
+        currency: CurrencyType.GOLD,
+        isActive: true,
+        cardProbabilities: calculateCardProbabilities(cards, basicRarityWeights),
+        availableCards: cardIds,
+        pitySystem: {
+          maxPity: 90,
+          guaranteedCards: cards.filter(c => c.rarity === CardRarity.SSR || c.rarity === CardRarity.UR || c.rarity === CardRarity.LR).map(c => c.id),
+          softPityStart: 75,
+          resetOnTrigger: true
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 'premium-pack',
+        name: '高级卡包',
+        description: '高稀有度卡牌概率提升的高级卡包',
+        coverImageUrl: '/assets/pack_premium.png',
+        cost: 200,
+        currency: CurrencyType.GOLD,
+        isActive: true,
+        cardProbabilities: calculateCardProbabilities(cards, premiumRarityWeights),
+        availableCards: cardIds,
+        pitySystem: {
+          maxPity: 80,
+          guaranteedCards: cards.filter(c => c.rarity === CardRarity.SSR || c.rarity === CardRarity.UR || c.rarity === CardRarity.LR).map(c => c.id),
+          softPityStart: 65,
+          resetOnTrigger: true
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 'legendary-pack',
+        name: '传说卡包',
+        description: '专注于传说级卡牌的稀有卡包',
+        coverImageUrl: '/assets/pack_legendary.png',
+        cost: 500,
+        currency: CurrencyType.GOLD,
+        isActive: true,
+        cardProbabilities: calculateCardProbabilities(cards, {
+          [CardRarity.N]: 0.30,
+          [CardRarity.R]: 0.40,
+          [CardRarity.SR]: 0.20,
+          [CardRarity.SSR]: 0.08,
+          [CardRarity.UR]: 0.015,
+          [CardRarity.LR]: 0.005
+        }),
+        availableCards: cardIds,
+        pitySystem: {
+          maxPity: 70,
+          guaranteedCards: cards.filter(c => c.rarity === CardRarity.SSR || c.rarity === CardRarity.UR || c.rarity === CardRarity.LR).map(c => c.id),
+          softPityStart: 55,
+          resetOnTrigger: true
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    this.setToStorage(this.STORAGE_KEYS.CARD_PACKS, defaultPacks);
+  }
+
+  private initializeCardTemplates(): void {
+    const defaultTemplates: CardTemplate[] = [
+      {
+        id: 'basic-card',
+        name: '基础卡片模版',
+        description: '标准的卡片模版，包含基本属性',
+        schema: {
+          type: 'object',
+          properties: {
+            attack: { 
+              type: 'number', 
+              minimum: 0, 
+              maximum: 2000, 
+              default: 100,
+              title: '攻击力',
+              description: '卡片的攻击力值'
+            },
+            defense: { 
+              type: 'number', 
+              minimum: 0, 
+              maximum: 2000, 
+              default: 80,
+              title: '防御力',
+              description: '卡片的防御力值'
+            }
+          },
+          required: ['attack', 'defense']
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 'legendary-card',
+        name: '传说卡片模版',
+        description: '传说级卡片模版，包含特殊技能',
+        schema: {
+          type: 'object',
+          properties: {
+            attack: { 
+              type: 'number', 
+              minimum: 500, 
+              maximum: 5000, 
+              default: 1000,
+              title: '攻击力',
+              description: '传说卡片的攻击力'
+            },
+            defense: { 
+              type: 'number', 
+              minimum: 400, 
+              maximum: 4000, 
+              default: 800,
+              title: '防御力',
+              description: '传说卡片的防御力'
+            },
+            special: { 
+              type: 'string',
+              title: '特殊技能',
+              description: '卡片的独特技能描述',
+              default: ''
+            }
+          },
+          required: ['attack', 'defense', 'special']
+        },
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    this.setToStorage(this.STORAGE_KEYS.CARD_TEMPLATES, defaultTemplates);
+  }
+
+  // 新增：根据卡包ID获取该卡包内所有卡片
+  async getCardsByPackId(packId: string): Promise<Card[]> {
+    const packs = await this.getCardPacks();
+    const pack = packs.find(p => p.id === packId);
+    if (!pack) return [];
+    const allCards = await this.getCards();
+    return allCards.filter(card => pack.availableCards.includes(card.id));
+  }
+} 

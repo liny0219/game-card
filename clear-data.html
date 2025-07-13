@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>清理测试数据</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #e74c3c;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+            width: 100%;
+        }
+        button:hover {
+            background: #c0392b;
+        }
+        .success {
+            color: #27ae60;
+            font-weight: bold;
+        }
+        .info {
+            background: #3498db;
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>清理测试数据</h1>
+        <div class="info">
+            <p>点击下面的按钮将清理所有本地存储的测试数据，系统将重新初始化：</p>
+            <ul>
+                <li>卡片数据（每个稀有度一张，使用本地生成的示例图片）</li>
+                <li>卡包数据（标准卡包、高级卡包、传说卡包，使用本地生成的示例图片）</li>
+                <li>卡片模板（基础模板和传说模板）</li>
+                <li>用户数据、抽卡历史等</li>
+            </ul>
+        </div>
+        
+        <button onclick="clearAllData()">清理所有数据</button>
+        
+        <div id="result"></div>
+    </div>
+
+    <script>
+        function clearAllData() {
+            const keys = [
+                'gacha_users',
+                'gacha_cards', 
+                'gacha_user_cards',
+                'gacha_card_packs',
+                'gacha_history',
+                'gacha_card_templates',
+                'gacha_current_user',
+                'gacha_pity_counters'
+            ];
+            
+            let clearedCount = 0;
+            keys.forEach(key => {
+                if (localStorage.getItem(key)) {
+                    localStorage.removeItem(key);
+                    clearedCount++;
+                }
+            });
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <div class="success">
+                    ✅ 成功清理了 ${clearedCount} 个数据项<br>
+                    🎉 数据已重置，请刷新主应用页面查看效果
+                </div>
+            `;
+            
+            // 3秒后自动跳转到主应用
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 3000);
+        }
+    </script>
+</body>
+</html> 
