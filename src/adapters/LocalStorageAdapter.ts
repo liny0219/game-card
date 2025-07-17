@@ -12,6 +12,7 @@ import {
   CardTemplate, 
   CardRarity, 
   CurrencyType,
+  GameplayType,
   ErrorType,
   GachaError
 } from '../types';
@@ -479,7 +480,8 @@ export class LocalStorageAdapter implements DataAdapter {
     // 应用软保底逻辑
     if (pack.pitySystem && currentPity >= pack.pitySystem.softPityStart) {
       const pityBonus = this.calculatePityBonus(currentPity, pack.pitySystem.softPityStart, pack.pitySystem.maxPity);
-      random = this.applyPityBonus(random, pityBonus, pack.pitySystem.guaranteedCards);
+      // 软保底增加高稀有度卡片的概率
+      random = random * (1 - pityBonus * 0.5);
     }
 
     // 按卡片概率抽取
@@ -515,22 +517,7 @@ export class LocalStorageAdapter implements DataAdapter {
     return Math.min(progress * 0.5, 0.5);
   }
 
-  private applyPityBonus(random: number, bonus: number, guaranteedCards: string[]): number {
-    // 软保底增加高稀有度卡片的概率
-    return random * (1 - bonus * 0.5);
-  }
 
-  private getRarityWeight(rarity: CardRarity): number {
-    const weights = {
-      [CardRarity.N]: 0.1,
-      [CardRarity.R]: 0.2,
-      [CardRarity.SR]: 0.4,
-      [CardRarity.SSR]: 0.6,
-      [CardRarity.UR]: 0.8,
-      [CardRarity.LR]: 1.0
-    };
-    return weights[rarity];
-  }
 
   private async getRandomGuaranteedCard(pack: CardPack): Promise<Card> {
     if (!pack.pitySystem || pack.pitySystem.guaranteedCards.length === 0) {
@@ -748,6 +735,186 @@ export class LocalStorageAdapter implements DataAdapter {
     return user.statistics;
   }
 
+  async getStatisticsByGameplayType(gameplayType: GameplayType): Promise<Statistics> {
+    const cacheKey = `global_statistics_${gameplayType}`;
+    const cached = this.getFromCache<Statistics>(cacheKey);
+    if (cached) return cached;
+    
+    const users = this.getFromStorage<User[]>(this.STORAGE_KEYS.USERS) || [];
+    const history = this.getFromStorage<GachaHistory[]>(this.STORAGE_KEYS.GACHA_HISTORY) || [];
+    const packs = await this.getCardPacksByGameplayType(gameplayType);
+    const packIds = new Set(packs.map(p => p.id));
+
+    // 只统计指定玩法类型的卡包历史记录
+    const filteredHistory = history.filter(h => packIds.has(h.packId));
+
+    const totalUsers = users.length;
+    const totalGachas = filteredHistory.reduce((sum, h) => sum + h.quantity, 0);
+    
+    const totalRevenue: Record<CurrencyType, number> = {
+      [CurrencyType.GOLD]: 0,
+      [CurrencyType.TICKET]: 0,
+      [CurrencyType.PREMIUM]: 0
+    };
+
+    const cardDistribution: Record<CardRarity, number> = {
+      [CardRarity.N]: 0,
+      [CardRarity.R]: 0,
+      [CardRarity.SR]: 0,
+      [CardRarity.SSR]: 0,
+      [CardRarity.UR]: 0,
+      [CardRarity.LR]: 0
+    };
+
+    filteredHistory.forEach(h => {
+      totalRevenue[h.result.currencyType] += h.result.currencySpent;
+      h.result.cards.forEach(card => {
+        cardDistribution[card.rarity]++;
+      });
+    });
+
+    const packCounts = new Map<string, number>();
+    filteredHistory.forEach(h => {
+      packCounts.set(h.packId, (packCounts.get(h.packId) || 0) + 1);
+    });
+
+    const popularPacks = Array.from(packCounts.entries())
+      .map(([packId, count]) => ({
+        packId,
+        count,
+        name: packs.find(p => p.id === packId)?.name || 'Unknown'
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+
+    // 简化的活跃度统计（基于该玩法类型的抽卡活动）
+    const now = new Date();
+    const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const userActivity = {
+      daily: filteredHistory.filter(h => new Date(h.createdAt) > oneDayAgo).map(h => h.userId).filter((v, i, a) => a.indexOf(v) === i).length,
+      weekly: filteredHistory.filter(h => new Date(h.createdAt) > oneWeekAgo).map(h => h.userId).filter((v, i, a) => a.indexOf(v) === i).length,
+      monthly: filteredHistory.filter(h => new Date(h.createdAt) > oneMonthAgo).map(h => h.userId).filter((v, i, a) => a.indexOf(v) === i).length
+    };
+
+    const statistics = {
+      totalUsers,
+      totalGachas,
+      totalRevenue,
+      cardDistribution,
+      popularPacks,
+      userActivity
+    };
+    
+    this.setToCache(cacheKey, statistics, this.CACHE_TTL.STATISTICS);
+    return statistics;
+  }
+
+  async getUserStatisticsByGameplayType(userId: string, gameplayType: GameplayType): Promise<UserStatistics> {
+    const cacheKey = `user_statistics_${userId}_${gameplayType}`;
+    const cached = this.getFromCache<UserStatistics>(cacheKey);
+    if (cached) return cached;
+    
+    const user = await this.getUser(userId);
+    if (!user) {
+      throw {
+        type: ErrorType.USER_NOT_FOUND,
+        message: `User ${userId} not found`,
+        details: { userId }
+      } as GachaError;
+    }
+
+    // 获取用户的抽卡历史记录
+    const allHistory = await this.getGachaHistory(userId);
+    const packs = await this.getCardPacksByGameplayType(gameplayType);
+    const packIds = new Set(packs.map(p => p.id));
+    
+    // 只统计指定玩法类型的卡包历史记录
+    const filteredHistory = allHistory.filter(h => packIds.has(h.packId));
+
+    // 初始化统计数据
+    const statistics: UserStatistics = {
+      totalGachas: 0,
+      totalSpent: {
+        [CurrencyType.GOLD]: 0,
+        [CurrencyType.TICKET]: 0,
+        [CurrencyType.PREMIUM]: 0
+      },
+      cardsByRarity: {
+        [CardRarity.N]: 0,
+        [CardRarity.R]: 0,
+        [CardRarity.SR]: 0,
+        [CardRarity.SSR]: 0,
+        [CardRarity.UR]: 0,
+        [CardRarity.LR]: 0
+      },
+      gachaByRarity: {
+        [CardRarity.N]: 0,
+        [CardRarity.R]: 0,
+        [CardRarity.SR]: 0,
+        [CardRarity.SSR]: 0,
+        [CardRarity.UR]: 0,
+        [CardRarity.LR]: 0
+      },
+      pityCounters: {},
+      packGachaSummary: []
+    };
+
+    // 聚合卡包统计
+    const packStats = new Map<string, {
+      packId: string;
+      packName: string;
+      packDescription: string;
+      packCoverImageUrl?: string;
+      currency: CurrencyType;
+      cost: number;
+      totalGachas: number;
+      lastGachaAt?: Date;
+    }>();
+
+    // 从过滤后的历史记录聚合数据
+    filteredHistory.forEach(record => {
+      statistics.totalGachas += record.quantity;
+      statistics.totalSpent[record.packCurrency] += record.result.currencySpent;
+      
+      record.result.cards.forEach(card => {
+        statistics.cardsByRarity[card.rarity]++;
+        statistics.gachaByRarity[card.rarity]++;
+      });
+      
+      const existing = packStats.get(record.packId);
+      if (existing) {
+        existing.totalGachas += record.quantity;
+        if (!existing.lastGachaAt || new Date(record.createdAt) > new Date(existing.lastGachaAt)) {
+          existing.lastGachaAt = record.createdAt;
+        }
+      } else {
+        packStats.set(record.packId, {
+          packId: record.packId,
+          packName: record.packName,
+          packDescription: record.packDescription,
+          packCoverImageUrl: record.packCoverImageUrl,
+          currency: record.packCurrency,
+          cost: record.packCost,
+          totalGachas: record.quantity,
+          lastGachaAt: record.createdAt
+        });
+      }
+      
+      if (!statistics.lastGachaAt || new Date(record.createdAt) > new Date(statistics.lastGachaAt)) {
+        statistics.lastGachaAt = record.createdAt;
+      }
+    });
+
+    statistics.packGachaSummary = Array.from(packStats.values())
+      .sort((a, b) => new Date(b.lastGachaAt || 0).getTime() - new Date(a.lastGachaAt || 0).getTime());
+    
+    this.setToCache(cacheKey, statistics, this.CACHE_TTL.USER_STATISTICS);
+    return statistics;
+  }
+
   public async updateUserStatisticsFromHistory(user: User): Promise<void> {
     const history = await this.getGachaHistory(user.id);
     
@@ -918,6 +1085,7 @@ export class LocalStorageAdapter implements DataAdapter {
         imageUrl: '/assets/card_n.png',
         attributes: { attack: 100, defense: 80 },
         templateId: 'basic-card',
+        gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
       },
@@ -930,6 +1098,7 @@ export class LocalStorageAdapter implements DataAdapter {
         imageUrl: '/assets/card_r.png',
         attributes: { attack: 200, defense: 150 },
         templateId: 'basic-card',
+        gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
       },
@@ -942,6 +1111,7 @@ export class LocalStorageAdapter implements DataAdapter {
         imageUrl: '/assets/card_sr.png',
         attributes: { attack: 400, defense: 300 },
         templateId: 'basic-card',
+        gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
       },
@@ -954,6 +1124,7 @@ export class LocalStorageAdapter implements DataAdapter {
         imageUrl: '/assets/card_ssr.png',
         attributes: { attack: 800, defense: 600 },
         templateId: 'basic-card',
+        gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
       },
@@ -966,6 +1137,7 @@ export class LocalStorageAdapter implements DataAdapter {
         imageUrl: '/assets/card_ur.png',
         attributes: { attack: 1500, defense: 1200 },
         templateId: 'basic-card',
+        gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
       },
@@ -978,6 +1150,7 @@ export class LocalStorageAdapter implements DataAdapter {
         imageUrl: '/assets/card_lr.png',
         attributes: { attack: 3000, defense: 2500, special: 'Dragon Breath' },
         templateId: 'legendary-card',
+        gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
       }
@@ -1039,6 +1212,7 @@ export class LocalStorageAdapter implements DataAdapter {
         cost: 100,
         currency: CurrencyType.GOLD,
         isActive: true,
+        gameplayType: GameplayType.DEFAULT,
         cardProbabilities: calculateCardProbabilities(cards, basicRarityWeights),
         availableCards: cardIds,
         pitySystem: {
@@ -1058,6 +1232,7 @@ export class LocalStorageAdapter implements DataAdapter {
         cost: 200,
         currency: CurrencyType.GOLD,
         isActive: true,
+        gameplayType: GameplayType.DEFAULT,
         cardProbabilities: calculateCardProbabilities(cards, premiumRarityWeights),
         availableCards: cardIds,
         pitySystem: {
@@ -1077,6 +1252,7 @@ export class LocalStorageAdapter implements DataAdapter {
         cost: 500,
         currency: CurrencyType.GOLD,
         isActive: true,
+        gameplayType: GameplayType.DEFAULT,
         cardProbabilities: calculateCardProbabilities(cards, {
           [CardRarity.N]: 0.30,
           [CardRarity.R]: 0.40,
@@ -1128,6 +1304,7 @@ export class LocalStorageAdapter implements DataAdapter {
           },
           required: ['attack', 'defense']
         },
+        gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
       },
@@ -1163,6 +1340,7 @@ export class LocalStorageAdapter implements DataAdapter {
           },
           required: ['attack', 'defense', 'special']
         },
+        gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
       }
@@ -1178,5 +1356,44 @@ export class LocalStorageAdapter implements DataAdapter {
     if (!pack) return [];
     const allCards = await this.getCards();
     return allCards.filter(card => pack.availableCards.includes(card.id));
+  }
+
+  // 新增：根据玩法类型过滤卡片
+  async getCardsByGameplayType(gameplayType: GameplayType): Promise<Card[]> {
+    const cacheKey = `cards_gameplay_${gameplayType}`;
+    const cached = this.getFromCache<Card[]>(cacheKey);
+    if (cached) return cached;
+
+    const allCards = await this.getCards();
+    const filteredCards = allCards.filter(card => card.gameplayType === gameplayType);
+    
+    this.setToCache(cacheKey, filteredCards, this.CACHE_TTL.CARDS);
+    return filteredCards;
+  }
+
+  // 新增：根据玩法类型过滤卡包
+  async getCardPacksByGameplayType(gameplayType: GameplayType): Promise<CardPack[]> {
+    const cacheKey = `packs_gameplay_${gameplayType}`;
+    const cached = this.getFromCache<CardPack[]>(cacheKey);
+    if (cached) return cached;
+
+    const allPacks = await this.getCardPacks();
+    const filteredPacks = allPacks.filter(pack => pack.gameplayType === gameplayType);
+    
+    this.setToCache(cacheKey, filteredPacks, this.CACHE_TTL.PACKS);
+    return filteredPacks;
+  }
+
+  // 新增：根据玩法类型过滤模板
+  async getCardTemplatesByGameplayType(gameplayType: GameplayType): Promise<CardTemplate[]> {
+    const cacheKey = `templates_gameplay_${gameplayType}`;
+    const cached = this.getFromCache<CardTemplate[]>(cacheKey);
+    if (cached) return cached;
+
+    const allTemplates = await this.getCardTemplates();
+    const filteredTemplates = allTemplates.filter(template => template.gameplayType === gameplayType);
+    
+    this.setToCache(cacheKey, filteredTemplates, this.CACHE_TTL.TEMPLATES);
+    return filteredTemplates;
   }
 } 

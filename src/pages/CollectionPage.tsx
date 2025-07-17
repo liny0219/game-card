@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
 import { useDataAdapter } from '../context/DataContext';
-import { UserCard, CardRarity } from '../types';
+import { UserCard, CardRarity, GameplayType } from '../types';
 
 const CollectionPage: React.FC = () => {
   const { user } = useUser();
@@ -9,6 +9,7 @@ const CollectionPage: React.FC = () => {
   const [userCards, setUserCards] = useState<UserCard[]>([]);
   const [filteredCards, setFilteredCards] = useState<UserCard[]>([]);
   const [selectedRarity, setSelectedRarity] = useState<CardRarity | 'ALL'>('ALL');
+  const [selectedGameplayType, setSelectedGameplayType] = useState<GameplayType | 'ALL'>('ALL');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -19,7 +20,7 @@ const CollectionPage: React.FC = () => {
 
   useEffect(() => {
     filterCards();
-  }, [userCards, selectedRarity]);
+  }, [userCards, selectedRarity, selectedGameplayType]);
 
   const loadUserCards = async () => {
     if (!user) return;
@@ -35,11 +36,19 @@ const CollectionPage: React.FC = () => {
   };
 
   const filterCards = () => {
-    if (selectedRarity === 'ALL') {
-      setFilteredCards(userCards);
-    } else {
-      setFilteredCards(userCards.filter(uc => uc.card?.rarity === selectedRarity));
+    let filtered = userCards;
+    
+    // 按稀有度过滤
+    if (selectedRarity !== 'ALL') {
+      filtered = filtered.filter(uc => uc.card?.rarity === selectedRarity);
     }
+    
+    // 按玩法类型过滤
+    if (selectedGameplayType !== 'ALL') {
+      filtered = filtered.filter(uc => uc.card?.gameplayType === selectedGameplayType);
+    }
+    
+    setFilteredCards(filtered);
   };
 
   if (loading) {
@@ -94,13 +103,45 @@ const CollectionPage: React.FC = () => {
         })}
       </div>
 
+      {/* 玩法类型过滤器 */}
+      <div className="flex justify-center mb-4">
+        <div className="flex items-center space-x-3">
+          <label className="text-sm font-medium text-gray-300">玩法类型：</label>
+          <select
+            value={selectedGameplayType}
+            onChange={(e) => setSelectedGameplayType(e.target.value as GameplayType | 'ALL')}
+            className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            style={{ color: '#1f2937' }}
+          >
+            <option value="ALL">全部</option>
+            {Object.values(GameplayType).map(type => (
+              <option key={type} value={type}>
+                {type === GameplayType.DEFAULT ? '默认玩法' :
+                 type === GameplayType.BATTLE ? '战斗玩法' :
+                 type === GameplayType.COLLECTION ? '收集玩法' :
+                 type === GameplayType.STRATEGY ? '策略玩法' :
+                 type === GameplayType.ADVENTURE ? '冒险玩法' :
+                 type === GameplayType.PUZZLE ? '解谜玩法' : type}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Cards Grid */}
       {filteredCards.length === 0 ? (
         <div className="text-center py-8 md:py-12">
           <div className="text-3xl md:text-4xl mb-3 md:mb-4">📭</div>
           <p className="text-gray-400 text-sm md:text-base">
-            {selectedRarity === 'ALL' ? '还没有收集任何卡牌' : `还没有收集 ${selectedRarity} 稀有度的卡牌`}
+            {selectedRarity === 'ALL' && selectedGameplayType === 'ALL' 
+              ? '还没有收集任何卡牌' 
+              : `没有找到符合条件的卡牌`}
           </p>
+          {(selectedRarity !== 'ALL' || selectedGameplayType !== 'ALL') && (
+            <p className="text-gray-500 text-xs mt-2">
+              尝试调整过滤条件或去抽卡获得新卡牌
+            </p>
+          )}
         </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 md:gap-4">
@@ -111,7 +152,7 @@ const CollectionPage: React.FC = () => {
                 {/* 封面图片为主视觉 */}
                 <div className="w-full aspect-[3/4] bg-gray-700 rounded-lg overflow-hidden flex items-center justify-center mb-2">
                   <img
-                    src={card?.coverImageUrl || card?.imageUrl || '/cards/default.jpg'}
+                    src={card?.imageUrl || '/cards/default.jpg'}
                     alt={card?.name}
                     className="w-full h-full object-cover"
                     onError={e => { e.currentTarget.src = '/cards/default.jpg'; }}

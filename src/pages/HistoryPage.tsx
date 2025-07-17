@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
 import { useDataAdapter } from '../context/DataContext';
-import { GachaHistory } from '../types';
+import { GachaHistory, GameplayType } from '../types';
 
 const HistoryPage: React.FC = () => {
   const { user } = useUser();
   const dataAdapter = useDataAdapter();
   const [history, setHistory] = useState<GachaHistory[]>([]);
+  const [filteredHistory, setFilteredHistory] = useState<GachaHistory[]>([]);
+  const [selectedGameplayType, setSelectedGameplayType] = useState<GameplayType | 'ALL'>('ALL');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -14,6 +16,10 @@ const HistoryPage: React.FC = () => {
       loadHistory();
     }
   }, [user]);
+
+  useEffect(() => {
+    filterHistory();
+  }, [history, selectedGameplayType]);
 
   const loadHistory = async () => {
     if (!user) return;
@@ -25,6 +31,21 @@ const HistoryPage: React.FC = () => {
       console.error('Failed to load history:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const filterHistory = async () => {
+    if (selectedGameplayType === 'ALL') {
+      setFilteredHistory(history);
+    } else {
+      // 根据抽卡历史中的卡包ID获取卡包信息进行过滤
+      const dataAdapter = useDataAdapter();
+      const packs = await dataAdapter.getCardPacks();
+      const filteredRecords = history.filter(h => {
+        const pack = packs.find(p => p.id === h.packId);
+        return pack?.gameplayType === selectedGameplayType;
+      });
+      setFilteredHistory(filteredRecords);
     }
   };
 
@@ -49,15 +70,47 @@ const HistoryPage: React.FC = () => {
         </p>
       </div>
 
+      {/* 玩法类型过滤器 */}
+      <div className="flex justify-center mb-6">
+        <div className="flex items-center space-x-3">
+          <label className="text-sm font-medium text-gray-300">玩法类型：</label>
+          <select
+            value={selectedGameplayType}
+            onChange={(e) => setSelectedGameplayType(e.target.value as GameplayType | 'ALL')}
+            className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            style={{ color: '#1f2937' }}
+          >
+            <option value="ALL">全部</option>
+            {Object.values(GameplayType).map(type => (
+              <option key={type} value={type}>
+                {type === GameplayType.DEFAULT ? '默认玩法' :
+                 type === GameplayType.BATTLE ? '战斗玩法' :
+                 type === GameplayType.COLLECTION ? '收集玩法' :
+                 type === GameplayType.STRATEGY ? '策略玩法' :
+                 type === GameplayType.ADVENTURE ? '冒险玩法' :
+                 type === GameplayType.PUZZLE ? '解谜玩法' : type}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* History List */}
-      {history.length === 0 ? (
+      {filteredHistory.length === 0 ? (
         <div className="text-center py-8 md:py-12">
           <div className="text-3xl md:text-4xl mb-3 md:mb-4">📋</div>
-          <p className="text-gray-400 text-sm md:text-base">还没有抽卡记录</p>
+          <p className="text-gray-400 text-sm md:text-base">
+            {history.length === 0 ? '还没有抽卡记录' : '没有找到符合条件的抽卡记录'}
+          </p>
+          {history.length > 0 && (
+            <p className="text-gray-500 text-xs mt-2">
+              尝试调整过滤条件查看其他记录
+            </p>
+          )}
         </div>
       ) : (
         <div className="space-y-3 md:space-y-4">
-          {history.map((record) => (
+          {filteredHistory.map((record) => (
             <div key={record.id} className="card p-3 md:p-6">
               <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-3 md:mb-4">
                 <div>

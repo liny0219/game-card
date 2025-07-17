@@ -64,4 +64,14 @@
   .rarity-LR {
     @apply bg-gradient-to-r from-yellow-400 to-orange-500 text-white;
   }
+
+  /* 确保 select 和 option 元素的文字颜色正确 */
+  select {
+    color: #1f2937 !important;
+  }
+  
+  select option {
+    color: #1f2937 !important;
+    background-color: white !important;
+  }
 } 

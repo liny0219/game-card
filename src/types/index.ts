@@ -15,6 +15,16 @@ export enum CurrencyType {
   PREMIUM = 'PREMIUM'
 }
 
+// 玩法类型枚举
+export enum GameplayType {
+  DEFAULT = 'DEFAULT',          // 默认玩法
+  BATTLE = 'BATTLE',           // 战斗玩法
+  COLLECTION = 'COLLECTION',   // 收集玩法
+  STRATEGY = 'STRATEGY',       // 策略玩法
+  ADVENTURE = 'ADVENTURE',     // 冒险玩法
+  PUZZLE = 'PUZZLE'            // 解谜玩法
+}
+
 // 卡牌类型
 export interface Card {
   id: string;
@@ -24,6 +34,7 @@ export interface Card {
   imageUrl: string;
   attributes: Record<string, any>;
   templateId: string;
+  gameplayType: GameplayType;      // 玩法类型
   createdAt: Date;
   updatedAt: Date;
 }
@@ -34,6 +45,7 @@ export interface CardTemplate {
   name: string;
   description: string;
   schema: Record<string, any>;
+  gameplayType: GameplayType;      // 玩法类型
   createdAt: Date;
   updatedAt: Date;
 }
@@ -57,6 +69,7 @@ export interface CardPack {
   cost: number;
   currency: CurrencyType;
   isActive: boolean;
+  gameplayType: GameplayType;        // 玩法类型
   // 每张卡片的具体概率分配（总和应为1.0）
   cardProbabilities: Record<string, number>;
   // 可用卡片列表
@@ -171,12 +184,16 @@ export interface DataAdapter {
   updateUserCard(userCard: UserCard): Promise<void>;
   // 新增：根据卡包ID获取该卡包内所有卡片
   getCardsByPackId(packId: string): Promise<Card[]>;
+  // 新增：根据玩法类型过滤卡片
+  getCardsByGameplayType(gameplayType: GameplayType): Promise<Card[]>;
   
   // 卡包相关
   getCardPacks(): Promise<CardPack[]>;
   getCardPack(id: string): Promise<CardPack | null>;
   updateCardPack(pack: CardPack): Promise<void>;
   deleteCardPack(id: string): Promise<void>;
+  // 新增：根据玩法类型过滤卡包
+  getCardPacksByGameplayType(gameplayType: GameplayType): Promise<CardPack[]>;
   
   // 抽卡相关
   performGacha(request: GachaRequest): Promise<GachaResult>;
@@ -186,10 +203,15 @@ export interface DataAdapter {
   getStatistics(): Promise<Statistics>;
   getUserStatistics(userId: string): Promise<UserStatistics>;
   updateUserStatisticsFromHistory(user: User): Promise<void>;
+  // 新增：按玩法类型过滤的统计
+  getStatisticsByGameplayType(gameplayType: GameplayType): Promise<Statistics>;
+  getUserStatisticsByGameplayType(userId: string, gameplayType: GameplayType): Promise<UserStatistics>;
   
   // 配置相关
   getCardTemplates(): Promise<CardTemplate[]>;
   updateCardTemplate(template: CardTemplate): Promise<void>;
+  // 新增：根据玩法类型过滤模板
+  getCardTemplatesByGameplayType(gameplayType: GameplayType): Promise<CardTemplate[]>;
   
   // 用户管理辅助方法
   getCurrentUser(): Promise<User | null>;

@@ -1,5 +1,4 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React from 'react';
 import { useUser } from '../context/UserContext';
 import { CardRarity } from '../types';
 
@@ -22,7 +21,7 @@ const HomePage: React.FC = () => {
 
   // 稀有度分布数据
   const rarityList = Object.values(CardRarity);
-  const rarityCollection = user ? user.statistics.cardsByRarity : {};
+  const rarityCollection: Record<CardRarity, number> = user ? user.statistics.cardsByRarity : {} as Record<CardRarity, number>;
 
   return (
     <div className="space-y-8">

@@ -3,13 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { useUser } from '../context/UserContext';
 import { useDataAdapter } from '../context/DataContext';
-import { CardPack, GachaResult, GachaAnimationState } from '../types';
+import { CardPack, GachaResult, GachaAnimationState, GameplayType, CardRarity } from '../types';
 import GlobalModal from '../components/GlobalModal';
 
 const GachaPage: React.FC = () => {
   const { user, refreshUser } = useUser();
   const dataAdapter = useDataAdapter();
   const [cardPacks, setCardPacks] = useState<CardPack[]>([]);
+  const [filteredPacks, setFilteredPacks] = useState<CardPack[]>([]);
+  const [selectedGameplayType, setSelectedGameplayType] = useState<GameplayType | 'ALL'>('ALL');
   const [selectedPack, setSelectedPack] = useState<CardPack | null>(null);
   const [gachaResult, setGachaResult] = useState<GachaResult | null>(null);
   const [animationState, setAnimationState] = useState<GachaAnimationState>(GachaAnimationState.IDLE);
@@ -23,17 +25,37 @@ const GachaPage: React.FC = () => {
     loadCardPacks();
   }, []);
 
+  useEffect(() => {
+    filterPacks();
+  }, [cardPacks, selectedGameplayType]);
+
   const loadCardPacks = async () => {
     try {
       const packs = await dataAdapter.getCardPacks();
       setCardPacks(packs);
-      if (packs.length > 0) {
-        setSelectedPack(packs[0]);
-      }
     } catch (error) {
       toast.error('加载卡包失败');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const filterPacks = () => {
+    let filtered: CardPack[];
+    if (selectedGameplayType === 'ALL') {
+      filtered = cardPacks;
+    } else {
+      filtered = cardPacks.filter(pack => pack.gameplayType === selectedGameplayType);
+    }
+    setFilteredPacks(filtered);
+    
+    // 更新选中的卡包
+    if (filtered.length > 0) {
+      if (!selectedPack || !filtered.find(pack => pack.id === selectedPack.id)) {
+        setSelectedPack(filtered[0]);
+      }
+    } else {
+      setSelectedPack(null);
     }
   };
 
@@ -122,9 +144,40 @@ const GachaPage: React.FC = () => {
         <p className="text-gray-400 text-sm md:text-base mb-4">选择卡包开始您的抽卡之旅</p>
       </div>
 
+      {/* 玩法类型过滤器 */}
+      <div className="flex justify-center mb-6">
+        <div className="flex items-center space-x-3">
+          <label className="text-sm font-medium text-gray-300">玩法类型：</label>
+          <select
+            value={selectedGameplayType}
+            onChange={(e) => setSelectedGameplayType(e.target.value as GameplayType | 'ALL')}
+            className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            style={{ color: '#1f2937' }}
+          >
+            <option value="ALL">全部</option>
+            {Object.values(GameplayType).map(type => (
+              <option key={type} value={type}>
+                {type === GameplayType.DEFAULT ? '默认玩法' :
+                 type === GameplayType.BATTLE ? '战斗玩法' :
+                 type === GameplayType.COLLECTION ? '收集玩法' :
+                 type === GameplayType.STRATEGY ? '策略玩法' :
+                 type === GameplayType.ADVENTURE ? '冒险玩法' :
+                 type === GameplayType.PUZZLE ? '解谜玩法' : type}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* Card Packs 封面主视觉，点击弹窗 */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
-        {cardPacks.map((pack) => (
+      {filteredPacks.length === 0 ? (
+        <div className="text-center py-8">
+          <div className="text-gray-400 text-lg">暂无该玩法类型的卡包</div>
+          <p className="text-gray-500 text-sm mt-2">请选择其他玩法类型或联系管理员添加卡包</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
+          {filteredPacks.map((pack) => (
           <div
             key={pack.id}
             className="bg-gray-800 rounded-xl shadow flex flex-col items-center p-3 md:p-5 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"
@@ -143,8 +196,9 @@ const GachaPage: React.FC = () => {
               <span className={`px-2 py-1 rounded text-xs ml-2 ${pack.isActive ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}`}>{pack.isActive ? '启用' : '禁用'}</span>
             </div>
           </div>
-        ))}
-      </div>
+          ))}
+        </div>
+      )}
 
       {/* 卡包详情弹窗 */}
       <GlobalModal open={!!packDetail} onClose={closePackDetail} zIndex={50} className="p-4 md:p-6 w-full max-w-lg md:max-w-2xl max-h-[95vh] md:max-h-[85vh]">
@@ -219,10 +273,8 @@ const GachaPage: React.FC = () => {
                             let cardProbability = '';
                             if (card.probability !== undefined) {
                               cardProbability = (card.probability * 100).toFixed(2) + '%';
-                            } else if (packDetail.rarityProbabilities && card.rarity && packDetailCards.filter(c => c.rarity === card.rarity).length > 0) {
-                              const sameRarityCount = packDetailCards.filter(c => c.rarity === card.rarity).length;
-                              const rarityProb = packDetail.rarityProbabilities[card.rarity] || 0;
-                              cardProbability = sameRarityCount > 0 ? ((rarityProb / sameRarityCount) * 100).toFixed(2) + '%' : '--';
+                            } else if (packDetail.cardProbabilities && packDetail.cardProbabilities[card.id]) {
+                              cardProbability = (packDetail.cardProbabilities[card.id] * 100).toFixed(2) + '%';
                             } else {
                               cardProbability = '--';
                             }
@@ -242,12 +294,19 @@ const GachaPage: React.FC = () => {
               <div className="mb-4">
                 <h4 className="text-sm font-medium text-gray-300 mb-2">稀有度概率</h4>
                 <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
-                  {packDetail.rarityProbabilities && Object.entries(packDetail.rarityProbabilities).map(([rarity, probability]) => (
-                    <div key={rarity} className="text-center">
-                      <div className={`rarity-${rarity} text-xs px-2 py-1 rounded mb-1`}>{rarity}</div>
-                      <div className="text-xs text-gray-400">{(probability * 100).toFixed(1)}%</div>
-                    </div>
-                  ))}
+                  {Object.values(CardRarity).map((rarity) => {
+                    const cardsOfRarity = packDetailCards.filter(c => c.rarity === rarity);
+                    const totalProbability = cardsOfRarity.reduce((sum, c) => {
+                      return sum + (packDetail.cardProbabilities[c.id] || 0);
+                    }, 0);
+                    
+                    return (
+                      <div key={rarity} className="text-center">
+                        <div className={`rarity-${rarity} text-xs px-2 py-1 rounded mb-1`}>{rarity}</div>
+                        <div className="text-xs text-gray-400">{(totalProbability * 100).toFixed(1)}%</div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
               {packDetail.pitySystem && (

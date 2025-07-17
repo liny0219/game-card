@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Card, CardPack, CardTemplate, CardRarity, CurrencyType } from '../types';
+import { Card, CardPack, CardTemplate, CardRarity, CurrencyType, GameplayType } from '../types';
 import { useDataAdapter } from '../context/DataContext';
 import { motion } from 'framer-motion';
 
@@ -14,11 +14,33 @@ const AdminPage: React.FC = () => {
   const [editingTemplate, setEditingTemplate] = useState<CardTemplate | null>(null);
   const [jsonText, setJsonText] = useState<string>('');
   const [jsonError, setJsonError] = useState<string>('');
-  const [importFile, setImportFile] = useState<File | null>(null);
+  const [selectedGameplayType, setSelectedGameplayType] = useState<GameplayType | 'ALL'>('ALL');
 
   useEffect(() => {
     loadData();
   }, []);
+
+  // 过滤函数
+  const getFilteredCards = () => {
+    if (selectedGameplayType === 'ALL') {
+      return cards;
+    }
+    return cards.filter(card => card.gameplayType === selectedGameplayType);
+  };
+
+  const getFilteredPacks = () => {
+    if (selectedGameplayType === 'ALL') {
+      return packs;
+    }
+    return packs.filter(pack => pack.gameplayType === selectedGameplayType);
+  };
+
+  const getFilteredTemplates = () => {
+    if (selectedGameplayType === 'ALL') {
+      return templates;
+    }
+    return templates.filter(template => template.gameplayType === selectedGameplayType);
+  };
 
   // 当编辑模板改变时，重置JSON编辑状态
   useEffect(() => {
@@ -116,13 +138,11 @@ const AdminPage: React.FC = () => {
 
       // 重新加载数据
       await loadData();
-      setImportFile(null);
       alert('数据导入成功！页面将刷新以应用新数据。');
       window.location.reload();
     } catch (error) {
       console.error('导入数据失败:', error);
       alert(`导入数据失败: ${error instanceof Error ? error.message : '未知错误'}`);
-      setImportFile(null);
     }
   };
 
@@ -245,33 +265,7 @@ const AdminPage: React.FC = () => {
     }
   };
 
-  // 渲染卡片属性显示（只读）
-  const renderCardAttributes = (card: Card) => {
-    const template = templates.find(t => t.id === card.templateId);
-    if (!template?.schema?.properties) {
-      // 如果没有模板schema，显示所有属性
-      return Object.entries(card.attributes).map(([key, value]) => (
-        <span key={key} className="text-sm text-gray-900">
-          {key}: {typeof value === 'boolean' ? (value ? '是' : '否') : value}
-        </span>
-      ));
-    }
 
-    // 根据schema渲染属性
-    return Object.entries(template.schema.properties)
-      .filter(([key]) => card.attributes[key] !== undefined)
-      .map(([key, propSchema]: [string, any]) => {
-        const value = card.attributes[key];
-        const displayValue = typeof value === 'boolean' ? (value ? '是' : '否') : value;
-        const label = propSchema.title || key;
-        
-        return (
-          <span key={key} className="text-sm text-gray-900">
-            {label}: {displayValue}
-          </span>
-        );
-      });
-  };
 
   // 根据JSON Schema渲染动态属性字段
   const renderSchemaFields = (schema: any, attributes: Record<string, any>, onChange: (key: string, value: any) => void) => {
@@ -305,12 +299,13 @@ const AdminPage: React.FC = () => {
           case 'string':
             if (propSchema.enum) {
               return (
-                <select
-                  value={currentValue || ''}
-                  onChange={(e) => onChange(key, e.target.value)}
-                  className="w-full p-2 border rounded-md text-gray-900 bg-white"
-                  required={isRequired}
-                >
+                              <select
+                value={currentValue || ''}
+                onChange={(e) => onChange(key, e.target.value)}
+                className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                style={{ color: '#1f2937' }}
+                required={isRequired}
+              >
                   <option value="">请选择...</option>
                   {propSchema.enum.map((option: string) => (
                     <option key={option} value={option}>{option}</option>
@@ -347,7 +342,8 @@ const AdminPage: React.FC = () => {
               <select
                 value={currentValue?.toString() || 'false'}
                 onChange={(e) => onChange(key, e.target.value === 'true')}
-                className="w-full p-2 border rounded-md text-gray-900 bg-white"
+                className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                style={{ color: '#1f2937' }}
                 required={isRequired}
               >
                 <option value="false">否</option>
@@ -459,7 +455,8 @@ const AdminPage: React.FC = () => {
             <select
               value={safeEditingCard.rarity}
               onChange={(e) => setEditingCard({...editingCard, rarity: e.target.value as CardRarity})}
-              className="w-full p-2 border rounded-md text-gray-900 bg-white"
+              className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              style={{ color: '#1f2937' }}
             >
               {Object.values(CardRarity).map(rarity => (
                 <option key={rarity} value={rarity}>{rarity}</option>
@@ -512,7 +509,34 @@ const AdminPage: React.FC = () => {
               });
             }
           )}
-          <div className="col-span-2">
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">
+              玩法类型
+            </label>
+            <select
+              value={safeEditingCard.gameplayType || GameplayType.DEFAULT}
+              onChange={(e) => {
+                setEditingCard({
+                  ...editingCard,
+                  gameplayType: e.target.value as GameplayType
+                });
+              }}
+              className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              style={{ color: '#1f2937' }}
+            >
+              {Object.values(GameplayType).map(type => (
+                <option key={type} value={type}>
+                  {type === GameplayType.DEFAULT ? '默认玩法' :
+                   type === GameplayType.BATTLE ? '战斗玩法' :
+                   type === GameplayType.COLLECTION ? '收集玩法' :
+                   type === GameplayType.STRATEGY ? '策略玩法' :
+                   type === GameplayType.ADVENTURE ? '冒险玩法' :
+                   type === GameplayType.PUZZLE ? '解谜玩法' : type}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
               卡片模板
             </label>
@@ -559,7 +583,8 @@ const AdminPage: React.FC = () => {
                   attributes: newAttributes
                 });
               }}
-              className="w-full p-2 border rounded-md text-gray-900 bg-white"
+              className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              style={{ color: '#1f2937' }}
             >
               {templates.map(template => (
                 <option key={template.id} value={template.id}>{template.name}</option>
@@ -592,14 +617,6 @@ const AdminPage: React.FC = () => {
       currency: editingPack.currency || CurrencyType.GOLD,
       isActive: editingPack.isActive !== undefined ? editingPack.isActive : true,
       cardProbabilities: editingPack.cardProbabilities || {},
-      rarityProbabilities: editingPack.rarityProbabilities || {
-        [CardRarity.N]: 0.60,
-        [CardRarity.R]: 0.25,
-        [CardRarity.SR]: 0.10,
-        [CardRarity.SSR]: 0.04,
-        [CardRarity.UR]: 0.009,
-        [CardRarity.LR]: 0.001
-      },
       availableCards: editingPack.availableCards || [],
       pitySystem: editingPack.pitySystem || {
         maxPity: 90,
@@ -652,12 +669,35 @@ const AdminPage: React.FC = () => {
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
+              玩法类型
+            </label>
+            <select
+              value={safeEditingPack.gameplayType || GameplayType.DEFAULT}
+              onChange={(e) => setEditingPack({...editingPack, gameplayType: e.target.value as GameplayType})}
+              className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              style={{ color: '#1f2937' }}
+            >
+              {Object.values(GameplayType).map(type => (
+                <option key={type} value={type}>
+                  {type === GameplayType.DEFAULT ? '默认玩法' :
+                   type === GameplayType.BATTLE ? '战斗玩法' :
+                   type === GameplayType.COLLECTION ? '收集玩法' :
+                   type === GameplayType.STRATEGY ? '策略玩法' :
+                   type === GameplayType.ADVENTURE ? '冒险玩法' :
+                   type === GameplayType.PUZZLE ? '解谜玩法' : type}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">
               消耗货币
             </label>
             <select
               value={safeEditingPack.currency}
               onChange={(e) => setEditingPack({...editingPack, currency: e.target.value as CurrencyType})}
-              className="w-full p-2 border rounded-md text-gray-900 bg-white"
+              className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              style={{ color: '#1f2937' }}
             >
               {Object.values(CurrencyType).map(currency => (
                 <option key={currency} value={currency}>{currency}</option>
@@ -686,7 +726,8 @@ const AdminPage: React.FC = () => {
             <select
               value={safeEditingPack.isActive.toString()}
               onChange={(e) => setEditingPack({...editingPack, isActive: e.target.value === 'true'})}
-              className="w-full p-2 border rounded-md text-gray-900 bg-white"
+              className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              style={{ color: '#1f2937' }}
             >
               <option value="true">启用</option>
               <option value="false">禁用</option>
@@ -703,51 +744,18 @@ const AdminPage: React.FC = () => {
               rows={3}
             />
           </div>
-          <div className="col-span-2">
-            <h4 className="font-medium text-gray-900 mb-2">稀有度概率</h4>
-            {Object.entries(safeEditingPack.rarityProbabilities).map(([rarity, probability]) => (
-              <div key={rarity} className="flex items-center space-x-2 mb-2">
-                <span className="w-12 text-sm text-gray-900">{rarity}:</span>
-                <input
-                  type="number"
-                  step="0.001"
-                  min="0"
-                  max="1"
-                  value={probability}
-                  onChange={(e) => setEditingPack({
-                    ...editingPack,
-                    rarityProbabilities: {
-                      ...editingPack.rarityProbabilities,
-                      [rarity]: parseFloat(e.target.value)
-                    }
-                  })}
-                  className="flex-1 p-2 border rounded-md text-gray-900 bg-white"
-                />
-                <span className="text-sm text-gray-500">
-                  ({(probability * 100).toFixed(1)}%)
-                </span>
-              </div>
-            ))}
-          </div>
+
           <div className="col-span-2">
             <div className="flex justify-between items-center mb-2">
               <h4 className="font-medium text-gray-900">卡片概率设置</h4>
               <button
                 onClick={() => {
-                  // 根据稀有度概率重新计算每张卡片的概率
-                  const newCardProbabilities = { ...safeEditingPack.cardProbabilities };
-                  const rarityGroups = cards.reduce((acc, card) => {
-                    if (!acc[card.rarity]) acc[card.rarity] = [];
-                    acc[card.rarity].push(card.id);
-                    return acc;
-                  }, {} as Record<CardRarity, string[]>);
-
-                  Object.entries(safeEditingPack.rarityProbabilities).forEach(([rarity, weight]) => {
-                    const cardsInRarity = rarityGroups[rarity as CardRarity] || [];
-                    const individualProbability = cardsInRarity.length > 0 ? weight / cardsInRarity.length : 0;
-                    cardsInRarity.forEach(cardId => {
-                      newCardProbabilities[cardId] = individualProbability;
-                    });
+                  // 为所有卡片设置相等的概率
+                  const totalCards = cards.length;
+                  const equalProbability = totalCards > 0 ? 1.0 / totalCards : 0;
+                  const newCardProbabilities: Record<string, number> = {};
+                  cards.forEach(card => {
+                    newCardProbabilities[card.id] = equalProbability;
                   });
 
                   setEditingPack({
@@ -757,7 +765,7 @@ const AdminPage: React.FC = () => {
                 }}
                 className="px-3 py-1 bg-green-500 text-white rounded text-sm hover:bg-green-600"
               >
-                根据稀有度重新分配
+                平均分配概率
               </button>
             </div>
             <div className="max-h-64 overflow-y-auto border rounded-md p-2">
@@ -1010,6 +1018,29 @@ const AdminPage: React.FC = () => {
               rows={3}
             />
           </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">
+              玩法类型
+            </label>
+            <select
+              value={safeEditingTemplate.gameplayType || GameplayType.DEFAULT}
+              onChange={(e) => setEditingTemplate({...editingTemplate, gameplayType: e.target.value as GameplayType})}
+              className="w-full p-2 border rounded-md text-gray-900 bg-white border-gray-300 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              style={{ color: '#1f2937' }}
+            >
+              {Object.values(GameplayType).map(type => (
+                <option key={type} value={type}>
+                  {type === GameplayType.DEFAULT ? '默认玩法' :
+                   type === GameplayType.BATTLE ? '战斗玩法' :
+                   type === GameplayType.COLLECTION ? '收集玩法' :
+                   type === GameplayType.STRATEGY ? '策略玩法' :
+                   type === GameplayType.ADVENTURE ? '冒险玩法' :
+                   type === GameplayType.PUZZLE ? '解谜玩法' : type}
+                </option>
+              ))}
+            </select>
+          </div>
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
               属性模式 (JSON)
@@ -1097,7 +1128,6 @@ const AdminPage: React.FC = () => {
                   onChange={(e) => {
                     const file = e.target.files?.[0];
                     if (file) {
-                      setImportFile(file);
                       importData(file);
                     }
                   }}
@@ -1184,6 +1214,31 @@ const AdminPage: React.FC = () => {
           >
             模版管理
           </button>
+        </div>
+
+        {/* 玩法类型过滤器 */}
+        <div className="mb-6">
+          <div className="flex items-center space-x-3">
+            <label className="text-sm font-medium text-gray-700">玩法类型过滤：</label>
+            <select
+              value={selectedGameplayType}
+              onChange={(e) => setSelectedGameplayType(e.target.value as GameplayType | 'ALL')}
+              className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+              style={{ color: '#1f2937' }}
+            >
+              <option value="ALL">全部</option>
+              {Object.values(GameplayType).map(type => (
+                <option key={type} value={type}>
+                  {type === GameplayType.DEFAULT ? '默认玩法' :
+                   type === GameplayType.BATTLE ? '战斗玩法' :
+                   type === GameplayType.COLLECTION ? '收集玩法' :
+                   type === GameplayType.STRATEGY ? '策略玩法' :
+                   type === GameplayType.ADVENTURE ? '冒险玩法' :
+                   type === GameplayType.PUZZLE ? '解谜玩法' : type}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         {/* 数据统计信息和导入导出说明 */}
@@ -1283,6 +1338,7 @@ const AdminPage: React.FC = () => {
                           imageUrl: '/assets/card_n.png',
                           attributes: initialAttributes,
                           templateId: defaultTemplate.id,
+                          gameplayType: GameplayType.DEFAULT,
                           createdAt: new Date(),
                           updatedAt: new Date()
                         };
@@ -1296,7 +1352,7 @@ const AdminPage: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2 max-h-[600px] overflow-y-auto pr-4 pl-2">
-                  {cards.map(card => (
+                  {getFilteredCards().map(card => (
                     <div 
                       key={card.id} 
                       className={`bg-white rounded-lg p-3 shadow cursor-pointer transition-all hover:shadow-md relative ${
@@ -1366,6 +1422,7 @@ const AdminPage: React.FC = () => {
                           cost: 100,
                           currency: CurrencyType.GOLD,
                           isActive: true,
+                          gameplayType: GameplayType.DEFAULT,
                           cardProbabilities: cards.reduce((acc, card) => {
                             acc[card.id] = card.rarity === CardRarity.N ? 0.02 : 
                                           card.rarity === CardRarity.R ? 0.0125 : 
@@ -1374,14 +1431,7 @@ const AdminPage: React.FC = () => {
                                           card.rarity === CardRarity.UR ? 0.003 : 0.001;
                             return acc;
                           }, {} as Record<string, number>),
-                          rarityProbabilities: {
-                            [CardRarity.N]: 0.60,
-                            [CardRarity.R]: 0.25,
-                            [CardRarity.SR]: 0.10,
-                            [CardRarity.SSR]: 0.04,
-                            [CardRarity.UR]: 0.009,
-                            [CardRarity.LR]: 0.001
-                          },
+
                           availableCards: cards.map(c => c.id),
                           pitySystem: {
                             maxPity: 90,
@@ -1402,7 +1452,7 @@ const AdminPage: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2 max-h-[600px] overflow-y-auto pr-4 pl-2">
-                  {packs.map(pack => (
+                  {getFilteredPacks().map(pack => (
                     <div 
                       key={pack.id} 
                       className={`bg-white rounded-lg p-3 shadow cursor-pointer transition-all hover:shadow-md relative ${
@@ -1415,7 +1465,7 @@ const AdminPage: React.FC = () => {
                       onClick={() => setEditingPack({
                         ...pack,
                         cardProbabilities: { ...pack.cardProbabilities },
-                        rarityProbabilities: { ...pack.rarityProbabilities },
+
                         availableCards: [...pack.availableCards],
                         pitySystem: pack.pitySystem ? {
                           ...pack.pitySystem,
@@ -1500,6 +1550,7 @@ const AdminPage: React.FC = () => {
                             },
                             required: ['attack', 'defense']
                           },
+                          gameplayType: GameplayType.DEFAULT,
                           createdAt: new Date(),
                           updatedAt: new Date()
                         };
@@ -1513,7 +1564,7 @@ const AdminPage: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2 max-h-[600px] overflow-y-auto pr-4 pl-2">
-                  {templates.map(template => (
+                  {getFilteredTemplates().map(template => (
                     <div 
                       key={template.id} 
                       className={`bg-white rounded-lg p-3 shadow cursor-pointer transition-all hover:shadow-md relative ${

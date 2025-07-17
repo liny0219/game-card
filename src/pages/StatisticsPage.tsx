@@ -1,29 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { useUser } from '../context/UserContext';
 import { useDataAdapter } from '../context/DataContext';
-import { Statistics, UserStatistics, CardRarity, CurrencyType } from '../types';
+import { Statistics, UserStatistics, CurrencyType, GameplayType } from '../types';
 
 const StatisticsPage: React.FC = () => {
   const { user } = useUser();
   const dataAdapter = useDataAdapter();
   const [userStats, setUserStats] = useState<UserStatistics | null>(null);
   const [globalStats, setGlobalStats] = useState<Statistics | null>(null);
+  const [selectedGameplayType, setSelectedGameplayType] = useState<GameplayType | 'ALL'>('ALL');
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     if (user) {
       loadStatistics();
     }
-  }, [user]);
+  }, [user, selectedGameplayType]);
 
   const loadStatistics = async () => {
     if (!user) return;
     
+    setLoading(true);
     try {
-      const [userStatsData, globalStatsData] = await Promise.all([
-        dataAdapter.getUserStatistics(user.id),
-        dataAdapter.getStatistics()
-      ]);
+      let userStatsData: UserStatistics;
+      let globalStatsData: Statistics;
+
+      if (selectedGameplayType === 'ALL') {
+        [userStatsData, globalStatsData] = await Promise.all([
+          dataAdapter.getUserStatistics(user.id),
+          dataAdapter.getStatistics()
+        ]);
+      } else {
+        [userStatsData, globalStatsData] = await Promise.all([
+          dataAdapter.getUserStatisticsByGameplayType(user.id, selectedGameplayType),
+          dataAdapter.getStatisticsByGameplayType(selectedGameplayType)
+        ]);
+      }
       
       setUserStats(userStatsData);
       setGlobalStats(globalStatsData);
@@ -53,10 +65,47 @@ const StatisticsPage: React.FC = () => {
         <p className="text-gray-400 text-sm md:text-base">详细的抽卡数据分析</p>
       </div>
 
+      {/* 玩法类型过滤器 */}
+      <div className="flex justify-center mb-6">
+        <div className="flex items-center space-x-3">
+          <label className="text-sm font-medium text-gray-300">玩法类型：</label>
+          <select
+            value={selectedGameplayType}
+            onChange={(e) => setSelectedGameplayType(e.target.value as GameplayType | 'ALL')}
+            className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+            style={{ color: '#1f2937' }}
+          >
+            <option value="ALL">全部</option>
+            {Object.values(GameplayType).map(type => (
+              <option key={type} value={type}>
+                {type === GameplayType.DEFAULT ? '默认玩法' :
+                 type === GameplayType.BATTLE ? '战斗玩法' :
+                 type === GameplayType.COLLECTION ? '收集玩法' :
+                 type === GameplayType.STRATEGY ? '策略玩法' :
+                 type === GameplayType.ADVENTURE ? '冒险玩法' :
+                 type === GameplayType.PUZZLE ? '解谜玩法' : type}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       {/* User Statistics */}
       {userStats && (
         <div className="space-y-4 md:space-y-6">
-          <h2 className="text-xl md:text-2xl font-semibold text-white">个人统计</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl md:text-2xl font-semibold text-white">个人统计</h2>
+            {selectedGameplayType !== 'ALL' && (
+              <div className="text-sm text-blue-400 bg-blue-400/10 px-3 py-1 rounded">
+                当前显示：{selectedGameplayType === GameplayType.DEFAULT ? '默认玩法' :
+                          selectedGameplayType === GameplayType.BATTLE ? '战斗玩法' :
+                          selectedGameplayType === GameplayType.COLLECTION ? '收集玩法' :
+                          selectedGameplayType === GameplayType.STRATEGY ? '策略玩法' :
+                          selectedGameplayType === GameplayType.ADVENTURE ? '冒险玩法' :
+                          selectedGameplayType === GameplayType.PUZZLE ? '解谜玩法' : selectedGameplayType}
+              </div>
+            )}
+          </div>
           
           {/* Overview Cards */}
           <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">
@@ -158,7 +207,19 @@ const StatisticsPage: React.FC = () => {
       {/* Global Statistics */}
       {globalStats && (
         <div className="space-y-6">
-          <h2 className="text-2xl font-semibold text-white">全局统计</h2>
+          <div className="flex items-center justify-between">
+            <h2 className="text-2xl font-semibold text-white">全局统计</h2>
+            {selectedGameplayType !== 'ALL' && (
+              <div className="text-sm text-green-400 bg-green-400/10 px-3 py-1 rounded">
+                当前显示：{selectedGameplayType === GameplayType.DEFAULT ? '默认玩法' :
+                          selectedGameplayType === GameplayType.BATTLE ? '战斗玩法' :
+                          selectedGameplayType === GameplayType.COLLECTION ? '收集玩法' :
+                          selectedGameplayType === GameplayType.STRATEGY ? '策略玩法' :
+                          selectedGameplayType === GameplayType.ADVENTURE ? '冒险玩法' :
+                          selectedGameplayType === GameplayType.PUZZLE ? '解谜玩法' : selectedGameplayType}
+              </div>
+            )}
+          </div>
           
           {/* Global Overview */}
           <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-3 md:gap-6">

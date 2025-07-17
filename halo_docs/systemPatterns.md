@@ -332,4 +332,284 @@ const messages = {
 const LocaleContext = createContext<LocaleContextType>();
 ```
 
-这些模式的组合使用，使得系统具有良好的可维护性、可扩展性和可测试性。 
+这些模式的组合使用，使得系统具有良好的可维护性、可扩展性和可测试性。
+
+## UI样式冲突避免模式
+
+### 1. 文字可见性保证模式
+**问题**：全局深色主题与表单元素的文字颜色冲突，导致文字不可见
+
+**原因分析**：
+- 全局CSS设置了 `body { @apply text-white; }` 白色文字
+- 表单元素（select、input、textarea）设置了白色背景但未明确指定文字颜色
+- 浏览器继承了全局的白色文字样式，导致白色文字配白色背景不可见
+
+**解决方案**：
+```css
+/* 1. 全局CSS强制规则 - src/index.css */
+@layer components {
+  /* 确保所有表单元素的文字颜色正确 */
+  select, input, textarea {
+    color: #1f2937 !important; /* 深灰色文字 */
+  }
+  
+  select option {
+    color: #1f2937 !important; /* 选项文字 */
+    background-color: white !important; /* 选项背景 */
+  }
+  
+  /* 确保按钮文字可见 */
+  button {
+    color: inherit !important; /* 继承按钮样式中定义的颜色 */
+  }
+  
+  /* 确保链接文字可见 */
+  a {
+    color: #3b82f6 !important; /* 蓝色链接 */
+  }
+  
+  /* 确保标签文字可见 */
+  label {
+    color: #374151 !important; /* 深灰色标签 */
+  }
+}
+```
+
+```typescript
+// 2. React组件内联样式保险 - 适用于关键组件
+<select
+  className="w-full p-2 border rounded-md text-gray-900 bg-white"
+  style={{ 
+    color: '#1f2937',           // 文字颜色
+    backgroundColor: 'white'     // 背景颜色
+  }}
+>
+```
+
+### 2. 对比度检查模式
+**预防措施**：在开发时检查文字与背景的对比度
+
+**实施方法**：
+```typescript
+// 开发时的对比度检查工具函数
+const checkContrast = (textColor: string, backgroundColor: string) => {
+  // WCAG 2.1 AA标准要求对比度至少为4.5:1
+  const contrast = calculateContrast(textColor, backgroundColor);
+  if (contrast < 4.5) {
+    console.warn(`对比度不足: ${contrast}, 建议调整颜色`);
+  }
+  return contrast >= 4.5;
+};
+
+// 在开发环境中使用
+if (process.env.NODE_ENV === 'development') {
+  checkContrast('#ffffff', '#ffffff'); // 会警告
+}
+```
+
+### 3. 样式优先级管理模式
+**CSS优先级策略**：
+1. **全局基础样式** - 最低优先级
+2. **组件样式类** - 中等优先级  
+3. **关键元素内联样式** - 最高优先级
+4. **!important规则** - 紧急修复用
+
+```css
+/* 优先级管理示例 */
+/* 1. 全局基础 */
+body { color: white; }
+
+/* 2. 组件类 */
+.form-input { color: #1f2937; }
+
+/* 3. 具体元素（最高优先级用于关键表单元素） */
+select, input[type="text"], textarea {
+  color: #1f2937 !important;
+}
+```
+
+### 4. 主题一致性模式
+**深色主题与浅色表单的协调**：
+
+```typescript
+// 主题配置
+const theme = {
+  // 页面主体使用深色主题
+  page: {
+    background: 'bg-gray-900',
+    text: 'text-white',
+  },
+  // 表单元素使用浅色主题确保可读性
+  form: {
+    background: 'bg-white',
+    text: 'text-gray-900',
+    border: 'border-gray-300',
+    focus: 'focus:border-blue-500 focus:ring-1 focus:ring-blue-500'
+  },
+  // 卡片等内容区域使用中等色调
+  card: {
+    background: 'bg-gray-800',
+    text: 'text-white',
+    border: 'border-gray-700'
+  }
+};
+
+// 标准化的表单组件样式
+const FORM_INPUT_CLASSES = `
+  w-full p-2 border rounded-md 
+  text-gray-900 bg-white border-gray-300 
+  focus:border-blue-500 focus:ring-1 focus:ring-blue-500
+`;
+```
+
+### 5. 通用可访问性模式
+**ARIA和语义化确保可访问性**：
+
+```typescript
+// 表单元素的完整可访问性实现
+<div>
+  <label 
+    htmlFor="gameplayType"
+    className="block text-sm font-medium text-gray-700 mb-2"
+    style={{ color: '#374151' }} // 确保标签可见
+  >
+    玩法类型
+  </label>
+  <select
+    id="gameplayType"
+    value={selectedType}
+    onChange={handleChange}
+    className={FORM_INPUT_CLASSES}
+    style={{ color: '#1f2937' }} // 确保文字可见
+    aria-label="选择游戏玩法类型"
+  >
+    <option value="">请选择...</option>
+    {options.map(option => (
+      <option 
+        key={option.value} 
+        value={option.value}
+        style={{ color: '#1f2937', backgroundColor: 'white' }}
+      >
+        {option.label}
+      </option>
+    ))}
+  </select>
+</div>
+```
+
+### 6. 样式测试模式
+**自动化检测样式冲突**：
+
+```typescript
+// 样式冲突检测的单元测试
+describe('UI Contrast Tests', () => {
+  it('should have sufficient contrast for all form elements', () => {
+    const formElements = screen.getAllByRole(/textbox|combobox|button/);
+    formElements.forEach(element => {
+      const styles = getComputedStyle(element);
+      const textColor = styles.color;
+      const backgroundColor = styles.backgroundColor;
+      
+      expect(calculateContrast(textColor, backgroundColor))
+        .toBeGreaterThanOrEqual(4.5);
+    });
+  });
+  
+  it('should not have invisible text', () => {
+    const textElements = screen.getAllByText(/./);
+    textElements.forEach(element => {
+      const styles = getComputedStyle(element);
+      expect(styles.color).not.toBe(styles.backgroundColor);
+    });
+  });
+});
+```
+
+### 7. 浏览器兼容性模式
+**跨浏览器的文字可见性保证**：
+
+```css
+/* 浏览器特定的修复 */
+/* Chrome/Safari */
+select::-webkit-appearance-none {
+  color: #1f2937 !important;
+}
+
+/* Firefox */
+select:-moz-appearance-none {
+  color: #1f2937 !important;
+}
+
+/* IE/Edge */
+select::-ms-expand {
+  color: #1f2937 !important;
+}
+
+/* 统一的表单元素样式 */
+input, select, textarea {
+  color: #1f2937 !important;
+  background-color: white !important;
+  
+  /* 确保placeholder可见 */
+  &::placeholder {
+    color: #9ca3af !important;
+    opacity: 1 !important;
+  }
+}
+```
+
+### 8. 开发规范模式
+**团队开发规范**：
+
+```typescript
+// 1. 禁止的模式（容易出问题）
+❌ className="text-white bg-white"        // 白色文字配白色背景
+❌ className="text-gray-900 bg-gray-900"  // 深色文字配深色背景
+
+// 2. 推荐的模式（安全可见）
+✅ className="text-gray-900 bg-white"     // 深色文字配浅色背景
+✅ className="text-white bg-gray-900"     // 浅色文字配深色背景
+
+// 3. 关键元素必须添加内联样式保险
+✅ style={{ color: '#1f2937', backgroundColor: 'white' }}
+
+// 4. 使用预定义的安全组合
+const SAFE_FORM_STYLES = {
+  input: "text-gray-900 bg-white border-gray-300",
+  button: "text-white bg-blue-600 hover:bg-blue-700",
+  label: "text-gray-700",
+  error: "text-red-600",
+  success: "text-green-600"
+};
+```
+
+### 9. 渐进增强模式
+**确保基本功能在任何情况下都可用**：
+
+```css
+/* 基础样式 - 即使CSS失效也能看见 */
+html {
+  color: black;
+  background: white;
+}
+
+/* 增强样式 - 在CSS正常加载时应用 */
+body {
+  color: white;
+  background: #111827;
+}
+
+/* 关键元素强制样式 - 确保表单始终可用 */
+input, select, textarea, button {
+  color: black !important;
+  background: white !important;
+  border: 1px solid #ccc !important;
+}
+```
+
+**记忆要点**：
+1. **永远确保表单元素的文字颜色明确指定**
+2. **使用内联样式作为关键元素的保险**
+3. **全局CSS规则用!important确保优先级**
+4. **开发时检查对比度，测试时验证可见性**
+5. **深色主题页面 + 浅色表单元素 = 最佳实践** 
