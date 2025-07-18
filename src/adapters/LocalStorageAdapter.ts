@@ -14,7 +14,19 @@ import {
   CurrencyType,
   GameplayType,
   ErrorType,
-  GachaError
+  GachaError,
+  SkillTemplate,
+  Skill,
+  UserSkill,
+  SkillComponent,
+  SkillEffectComponent,
+  SkillSlotComponent,
+  SkillType,
+  SkillRarity,
+  SkillTargetType,
+  SkillEffectType,
+  SkillBinding,
+  CardSkillBinding
 } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -27,7 +39,14 @@ export class LocalStorageAdapter implements DataAdapter {
     GACHA_HISTORY: 'gacha_history',
     CARD_TEMPLATES: 'gacha_card_templates',
     CURRENT_USER: 'gacha_current_user',
-    PITY_COUNTERS: 'gacha_pity_counters'
+    PITY_COUNTERS: 'gacha_pity_counters',
+    // 技能系统相关
+    SKILL_TEMPLATES: 'gacha_skill_templates',
+    SKILLS: 'gacha_skills',
+    USER_SKILLS: 'gacha_user_skills',
+    SKILL_COMPONENTS: 'gacha_skill_components',
+    SKILL_EFFECTS: 'gacha_skill_effects',
+    SKILL_SLOT_COMPONENTS: 'gacha_skill_slot_components'
   };
 
   // 概率验证容差
@@ -69,6 +88,26 @@ export class LocalStorageAdapter implements DataAdapter {
     }
     if (!this.getFromStorage(this.STORAGE_KEYS.PITY_COUNTERS)) {
       this.setToStorage(this.STORAGE_KEYS.PITY_COUNTERS, {});
+    }
+
+    // 技能系统初始化
+    if (!this.getFromStorage(this.STORAGE_KEYS.SKILL_TEMPLATES)) {
+      this.initializeSkillTemplates();
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.SKILLS)) {
+      this.initializeSkills();
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.USER_SKILLS)) {
+      this.setToStorage(this.STORAGE_KEYS.USER_SKILLS, []);
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.SKILL_COMPONENTS)) {
+      this.setToStorage(this.STORAGE_KEYS.SKILL_COMPONENTS, []);
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.SKILL_EFFECTS)) {
+      this.setToStorage(this.STORAGE_KEYS.SKILL_EFFECTS, []);
+    }
+    if (!this.getFromStorage(this.STORAGE_KEYS.SKILL_SLOT_COMPONENTS)) {
+      this.setToStorage(this.STORAGE_KEYS.SKILL_SLOT_COMPONENTS, []);
     }
 
     // 数据迁移：确保现有用户有gachaByRarity字段
@@ -1277,6 +1316,66 @@ export class LocalStorageAdapter implements DataAdapter {
   }
 
   private initializeCardTemplates(): void {
+    // 先初始化技能，获取技能对象
+    const defaultSkills: Skill[] = [
+      {
+        id: 'basic-attack',
+        name: '基础攻击',
+        description: '简单的物理攻击',
+        rarity: SkillRarity.N,
+        skillType: SkillType.ATTACK,
+        iconUrl: '/assets/skill_basic_attack.png',
+        templateId: 'attack-skill',
+        attributes: {
+          damage: 50,
+          criticalChance: 0.05
+        },
+        maxLevel: 10,
+        levelScaling: {
+          damage: 5,
+          criticalChance: 0.01
+        },
+        unlockConditions: [
+          {
+            type: 'level',
+            value: 1,
+            description: '角色等级达到1级'
+          }
+        ],
+        gameplayType: GameplayType.DEFAULT,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 'heal-spell',
+        name: '治疗术',
+        description: '恢复目标生命值',
+        rarity: SkillRarity.R,
+        skillType: SkillType.HEAL,
+        iconUrl: '/assets/skill_heal.png',
+        templateId: 'heal-skill',
+        attributes: {
+          healing: 60,
+          overheal: false
+        },
+        maxLevel: 8,
+        levelScaling: {
+          healing: 8
+        },
+        unlockConditions: [
+          {
+            type: 'level',
+            value: 5,
+            description: '角色等级达到5级'
+          }
+        ],
+        gameplayType: GameplayType.DEFAULT,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    // 模板定义
     const defaultTemplates: CardTemplate[] = [
       {
         id: 'basic-card',
@@ -1304,6 +1403,21 @@ export class LocalStorageAdapter implements DataAdapter {
           },
           required: ['attack', 'defense']
         },
+        skillBindings: [
+          {
+            id: 'basic-skill-1',
+            name: '技能1',
+            description: '基础攻击技能，可对敌人造成伤害',
+            skillId: 'basic-attack',
+            skill: defaultSkills.find(s => s.id === 'basic-attack'),
+            maxLevel: 10,
+            unlockCondition: {
+              type: 'level',
+              value: 1,
+              description: '角色等级达到1级解锁'
+            }
+          }
+        ],
         gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
@@ -1340,6 +1454,34 @@ export class LocalStorageAdapter implements DataAdapter {
           },
           required: ['attack', 'defense', 'special']
         },
+        skillBindings: [
+          {
+            id: 'legendary-skill-1',
+            name: '技能1',
+            description: '传说级攻击技能，造成强大的伤害',
+            skillId: 'basic-attack',
+            skill: defaultSkills.find(s => s.id === 'basic-attack'),
+            maxLevel: 15,
+            unlockCondition: {
+              type: 'level',
+              value: 10,
+              description: '角色等级达到10级解锁'
+            }
+          },
+          {
+            id: 'legendary-skill-2',
+            name: '技能2',
+            description: '传说级治疗技能，恢复大量生命值',
+            skillId: 'heal-spell',
+            skill: defaultSkills.find(s => s.id === 'heal-spell'),
+            maxLevel: 12,
+            unlockCondition: {
+              type: 'level',
+              value: 15,
+              description: '角色等级达到15级解锁'
+            }
+          }
+        ],
         gameplayType: GameplayType.DEFAULT,
         createdAt: new Date(),
         updatedAt: new Date()
@@ -1347,6 +1489,8 @@ export class LocalStorageAdapter implements DataAdapter {
     ];
 
     this.setToStorage(this.STORAGE_KEYS.CARD_TEMPLATES, defaultTemplates);
+    // 也要初始化技能存储，防止被覆盖
+    this.setToStorage(this.STORAGE_KEYS.SKILLS, defaultSkills);
   }
 
   // 新增：根据卡包ID获取该卡包内所有卡片
@@ -1395,5 +1539,560 @@ export class LocalStorageAdapter implements DataAdapter {
     
     this.setToCache(cacheKey, filteredTemplates, this.CACHE_TTL.TEMPLATES);
     return filteredTemplates;
+  }
+
+  // ==================== 技能系统方法实现 ====================
+
+  // 技能模板相关方法
+  async getSkillTemplates(): Promise<SkillTemplate[]> {
+    const cacheKey = 'skill_templates_all';
+    const cached = this.getFromCache<SkillTemplate[]>(cacheKey);
+    if (cached) return cached;
+
+    const templates = this.getFromStorage<SkillTemplate[]>(this.STORAGE_KEYS.SKILL_TEMPLATES) || [];
+    this.setToCache(cacheKey, templates, this.CACHE_TTL.TEMPLATES);
+    return templates;
+  }
+
+  async getSkillTemplate(id: string): Promise<SkillTemplate | null> {
+    const templates = await this.getSkillTemplates();
+    return templates.find(template => template.id === id) || null;
+  }
+
+  async updateSkillTemplate(template: SkillTemplate): Promise<void> {
+    const templates = await this.getSkillTemplates();
+    const index = templates.findIndex(t => t.id === template.id);
+    
+    if (index >= 0) {
+      templates[index] = { ...template, updatedAt: new Date() };
+    } else {
+      templates.push({ ...template, createdAt: new Date(), updatedAt: new Date() });
+    }
+    
+    this.setToStorage(this.STORAGE_KEYS.SKILL_TEMPLATES, templates);
+    this.invalidateCache('skill_templates');
+  }
+
+  async deleteSkillTemplate(id: string): Promise<void> {
+    const templates = await this.getSkillTemplates();
+    const filteredTemplates = templates.filter(t => t.id !== id);
+    this.setToStorage(this.STORAGE_KEYS.SKILL_TEMPLATES, filteredTemplates);
+    this.invalidateCache('skill_templates');
+  }
+
+  async getSkillTemplatesByGameplayType(gameplayType: GameplayType): Promise<SkillTemplate[]> {
+    const cacheKey = `skill_templates_gameplay_${gameplayType}`;
+    const cached = this.getFromCache<SkillTemplate[]>(cacheKey);
+    if (cached) return cached;
+
+    const allTemplates = await this.getSkillTemplates();
+    const filteredTemplates = allTemplates.filter(template => template.gameplayType === gameplayType);
+    
+    this.setToCache(cacheKey, filteredTemplates, this.CACHE_TTL.TEMPLATES);
+    return filteredTemplates;
+  }
+
+  // 技能相关方法
+  async getSkills(): Promise<Skill[]> {
+    const cacheKey = 'skills_all';
+    const cached = this.getFromCache<Skill[]>(cacheKey);
+    if (cached) return cached;
+
+    const skills = this.getFromStorage<Skill[]>(this.STORAGE_KEYS.SKILLS) || [];
+    this.setToCache(cacheKey, skills, this.CACHE_TTL.CARDS);
+    return skills;
+  }
+
+  async getSkill(id: string): Promise<Skill | null> {
+    const skills = await this.getSkills();
+    return skills.find(skill => skill.id === id) || null;
+  }
+
+  async updateSkill(skill: Skill): Promise<void> {
+    const skills = await this.getSkills();
+    const index = skills.findIndex(s => s.id === skill.id);
+    
+    if (index >= 0) {
+      skills[index] = { ...skill, updatedAt: new Date() };
+    } else {
+      skills.push({ ...skill, createdAt: new Date(), updatedAt: new Date() });
+    }
+    
+    this.setToStorage(this.STORAGE_KEYS.SKILLS, skills);
+    this.invalidateCache('skills');
+  }
+
+  async deleteSkill(id: string): Promise<void> {
+    const skills = await this.getSkills();
+    const filteredSkills = skills.filter(s => s.id !== id);
+    this.setToStorage(this.STORAGE_KEYS.SKILLS, filteredSkills);
+    this.invalidateCache('skills');
+  }
+
+  async getSkillsByGameplayType(gameplayType: GameplayType): Promise<Skill[]> {
+    const cacheKey = `skills_gameplay_${gameplayType}`;
+    const cached = this.getFromCache<Skill[]>(cacheKey);
+    if (cached) return cached;
+
+    const allSkills = await this.getSkills();
+    const filteredSkills = allSkills.filter(skill => skill.gameplayType === gameplayType);
+    
+    this.setToCache(cacheKey, filteredSkills, this.CACHE_TTL.CARDS);
+    return filteredSkills;
+  }
+
+  async getSkillsByType(skillType: SkillType): Promise<Skill[]> {
+    const cacheKey = `skills_type_${skillType}`;
+    const cached = this.getFromCache<Skill[]>(cacheKey);
+    if (cached) return cached;
+
+    const allSkills = await this.getSkills();
+    const filteredSkills = allSkills.filter(skill => skill.skillType === skillType);
+    
+    this.setToCache(cacheKey, filteredSkills, this.CACHE_TTL.CARDS);
+    return filteredSkills;
+  }
+
+  // 用户技能相关方法
+  async getUserSkills(userId: string): Promise<UserSkill[]> {
+    const userSkills = this.getFromStorage<UserSkill[]>(this.STORAGE_KEYS.USER_SKILLS) || [];
+    const userSkillList = userSkills.filter(us => us.userId === userId);
+    
+    // 加载技能详情
+    const skills = await this.getSkills();
+    return userSkillList.map(userSkill => ({
+      ...userSkill,
+      skill: skills.find(s => s.id === userSkill.skillId)
+    }));
+  }
+
+  async updateUserSkill(userSkill: UserSkill): Promise<void> {
+    const userSkills = this.getFromStorage<UserSkill[]>(this.STORAGE_KEYS.USER_SKILLS) || [];
+    const index = userSkills.findIndex(us => us.id === userSkill.id);
+    
+    if (index >= 0) {
+      userSkills[index] = userSkill;
+    } else {
+      userSkills.push(userSkill);
+    }
+    
+    this.setToStorage(this.STORAGE_KEYS.USER_SKILLS, userSkills);
+  }
+
+  async unlockUserSkill(userId: string, skillId: string): Promise<void> {
+    const userSkills = this.getFromStorage<UserSkill[]>(this.STORAGE_KEYS.USER_SKILLS) || [];
+    const existingSkill = userSkills.find(us => us.userId === userId && us.skillId === skillId);
+    
+    if (!existingSkill) {
+      const newUserSkill: UserSkill = {
+        id: uuidv4(),
+        userId,
+        skillId,
+        level: 1,
+        experience: 0,
+        isUnlocked: true,
+        obtainedAt: new Date()
+      };
+      userSkills.push(newUserSkill);
+      this.setToStorage(this.STORAGE_KEYS.USER_SKILLS, userSkills);
+    } else if (!existingSkill.isUnlocked) {
+      existingSkill.isUnlocked = true;
+      this.setToStorage(this.STORAGE_KEYS.USER_SKILLS, userSkills);
+    }
+  }
+
+  async upgradeUserSkill(userId: string, skillId: string, experience: number): Promise<void> {
+    const userSkills = this.getFromStorage<UserSkill[]>(this.STORAGE_KEYS.USER_SKILLS) || [];
+    const userSkill = userSkills.find(us => us.userId === userId && us.skillId === skillId);
+    
+    if (userSkill) {
+      userSkill.experience += experience;
+      
+      // 简单的升级逻辑：每100经验升1级
+      const newLevel = Math.floor(userSkill.experience / 100) + 1;
+      if (newLevel > userSkill.level) {
+        userSkill.level = newLevel;
+      }
+      
+      this.setToStorage(this.STORAGE_KEYS.USER_SKILLS, userSkills);
+    }
+  }
+
+  // ECS组件数据方法
+  async getSkillComponents(entityId: string): Promise<SkillComponent[]> {
+    const components = this.getFromStorage<SkillComponent[]>(this.STORAGE_KEYS.SKILL_COMPONENTS) || [];
+    return components.filter(component => component.entityId === entityId);
+  }
+
+  async updateSkillComponent(component: SkillComponent): Promise<void> {
+    const components = this.getFromStorage<SkillComponent[]>(this.STORAGE_KEYS.SKILL_COMPONENTS) || [];
+    const index = components.findIndex(c => c.entityId === component.entityId && c.skillId === component.skillId);
+    
+    if (index >= 0) {
+      components[index] = component;
+    } else {
+      components.push(component);
+    }
+    
+    this.setToStorage(this.STORAGE_KEYS.SKILL_COMPONENTS, components);
+  }
+
+  async getSkillEffects(entityId: string): Promise<SkillEffectComponent[]> {
+    const effects = this.getFromStorage<SkillEffectComponent[]>(this.STORAGE_KEYS.SKILL_EFFECTS) || [];
+    return effects.filter(effect => effect.entityId === entityId);
+  }
+
+  async updateSkillEffect(effect: SkillEffectComponent): Promise<void> {
+    const effects = this.getFromStorage<SkillEffectComponent[]>(this.STORAGE_KEYS.SKILL_EFFECTS) || [];
+    const index = effects.findIndex(e => e.entityId === effect.entityId && e.skillId === effect.skillId);
+    
+    if (index >= 0) {
+      effects[index] = effect;
+    } else {
+      effects.push(effect);
+    }
+    
+    this.setToStorage(this.STORAGE_KEYS.SKILL_EFFECTS, effects);
+  }
+
+  async getSkillSlotComponents(entityId: string): Promise<SkillSlotComponent[]> {
+    const components = this.getFromStorage<SkillSlotComponent[]>(this.STORAGE_KEYS.SKILL_SLOT_COMPONENTS) || [];
+    return components.filter(component => component.entityId === entityId);
+  }
+
+  async updateSkillSlotComponent(component: SkillSlotComponent): Promise<void> {
+    const components = this.getFromStorage<SkillSlotComponent[]>(this.STORAGE_KEYS.SKILL_SLOT_COMPONENTS) || [];
+    const index = components.findIndex(c => c.entityId === component.entityId);
+    
+    if (index >= 0) {
+      components[index] = component;
+    } else {
+      components.push(component);
+    }
+    
+    this.setToStorage(this.STORAGE_KEYS.SKILL_SLOT_COMPONENTS, components);
+  }
+
+  // 初始化技能模板
+  private initializeSkillTemplates(): void {
+    const defaultSkillTemplates: SkillTemplate[] = [
+      {
+        id: 'attack-skill',
+        name: '攻击技能模板',
+        description: '基础攻击技能模板，包含伤害计算',
+        skillType: SkillType.ATTACK,
+        targetType: SkillTargetType.SINGLE_ENEMY,
+        range: 1,
+        castTime: 0,
+        cooldown: 3,
+        manaCost: 20,
+        effects: [
+          {
+            type: SkillEffectType.DAMAGE,
+            target: SkillTargetType.SINGLE_ENEMY,
+            duration: 'instant',
+            magnitude: {
+              base: 100,
+              scaling: 10,
+              attribute: 'attack'
+            }
+          }
+        ],
+        schema: {
+          type: 'object',
+          properties: {
+            damage: {
+              type: 'number',
+              minimum: 0,
+              maximum: 1000,
+              default: 100,
+              title: '基础伤害',
+              description: '技能的基础伤害值'
+            },
+            criticalChance: {
+              type: 'number',
+              minimum: 0,
+              maximum: 1,
+              default: 0.1,
+              title: '暴击率',
+              description: '技能暴击的概率'
+            }
+          },
+          required: ['damage', 'criticalChance']
+        },
+        gameplayType: GameplayType.DEFAULT,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 'heal-skill',
+        name: '治疗技能模板',
+        description: '基础治疗技能模板，包含治疗计算',
+        skillType: SkillType.HEAL,
+        targetType: SkillTargetType.SINGLE_ALLY,
+        range: 1,
+        castTime: 1,
+        cooldown: 5,
+        manaCost: 30,
+        effects: [
+          {
+            type: SkillEffectType.HEAL,
+            target: SkillTargetType.SINGLE_ALLY,
+            duration: 'instant',
+            magnitude: {
+              base: 80,
+              scaling: 8,
+              attribute: 'healing'
+            }
+          }
+        ],
+        schema: {
+          type: 'object',
+          properties: {
+            healing: {
+              type: 'number',
+              minimum: 0,
+              maximum: 500,
+              default: 80,
+              title: '治疗量',
+              description: '技能的治疗量'
+            },
+            overheal: {
+              type: 'boolean',
+              default: false,
+              title: '允许过量治疗',
+              description: '是否允许治疗量超过最大生命值'
+            }
+          },
+          required: ['healing', 'overheal']
+        },
+        gameplayType: GameplayType.DEFAULT,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    this.setToStorage(this.STORAGE_KEYS.SKILL_TEMPLATES, defaultSkillTemplates);
+  }
+
+  // 初始化技能
+  private initializeSkills(): void {
+    const defaultSkills: Skill[] = [
+      {
+        id: 'basic-attack',
+        name: '基础攻击',
+        description: '简单的物理攻击',
+        rarity: SkillRarity.N,
+        skillType: SkillType.ATTACK,
+        iconUrl: '/assets/skill_basic_attack.png',
+        templateId: 'attack-skill',
+        attributes: {
+          damage: 50,
+          criticalChance: 0.05
+        },
+        maxLevel: 10,
+        levelScaling: {
+          damage: 5,
+          criticalChance: 0.01
+        },
+        unlockConditions: [
+          {
+            type: 'level',
+            value: 1,
+            description: '角色等级达到1级'
+          }
+        ],
+        gameplayType: GameplayType.DEFAULT,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      },
+      {
+        id: 'heal-spell',
+        name: '治疗术',
+        description: '恢复目标生命值',
+        rarity: SkillRarity.R,
+        skillType: SkillType.HEAL,
+        iconUrl: '/assets/skill_heal.png',
+        templateId: 'heal-skill',
+        attributes: {
+          healing: 60,
+          overheal: false
+        },
+        maxLevel: 8,
+        levelScaling: {
+          healing: 8
+        },
+        unlockConditions: [
+          {
+            type: 'level',
+            value: 5,
+            description: '角色等级达到5级'
+          }
+        ],
+        gameplayType: GameplayType.DEFAULT,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      }
+    ];
+
+    this.setToStorage(this.STORAGE_KEYS.SKILLS, defaultSkills);
+  }
+
+  // ==================== 技能绑定相关方法 ====================
+
+  async getSkillBindingsByTemplate(templateId: string): Promise<SkillBinding[]> {
+    const templates = this.getFromStorage<CardTemplate[]>(this.STORAGE_KEYS.CARD_TEMPLATES) || [];
+    const template = templates.find(t => t.id === templateId);
+    return template?.skillBindings || [];
+  }
+
+  async updateSkillBinding(templateId: string, binding: SkillBinding): Promise<void> {
+    const templates = this.getFromStorage<CardTemplate[]>(this.STORAGE_KEYS.CARD_TEMPLATES) || [];
+    const templateIndex = templates.findIndex(t => t.id === templateId);
+    
+    if (templateIndex === -1) {
+      throw new Error(`Template ${templateId} not found`);
+    }
+
+    const template = templates[templateIndex];
+    const skillBindings = template.skillBindings || [];
+    const bindingIndex = skillBindings.findIndex(b => b.id === binding.id);
+    
+    if (bindingIndex >= 0) {
+      skillBindings[bindingIndex] = binding;
+    } else {
+      skillBindings.push(binding);
+    }
+
+    template.skillBindings = skillBindings;
+    template.updatedAt = new Date();
+    templates[templateIndex] = template;
+    
+    this.setToStorage(this.STORAGE_KEYS.CARD_TEMPLATES, templates);
+    this.invalidateCache('templates');
+  }
+
+  async deleteSkillBinding(templateId: string, bindingId: string): Promise<void> {
+    const templates = this.getFromStorage<CardTemplate[]>(this.STORAGE_KEYS.CARD_TEMPLATES) || [];
+    const templateIndex = templates.findIndex(t => t.id === templateId);
+    
+    if (templateIndex === -1) {
+      throw new Error(`Template ${templateId} not found`);
+    }
+
+    const template = templates[templateIndex];
+    const skillBindings = template.skillBindings || [];
+    const filteredBindings = skillBindings.filter(b => b.id !== bindingId);
+    
+    template.skillBindings = filteredBindings;
+    template.updatedAt = new Date();
+    templates[templateIndex] = template;
+    
+    this.setToStorage(this.STORAGE_KEYS.CARD_TEMPLATES, templates);
+    this.invalidateCache('templates');
+  }
+
+  async getCardSkillBindings(cardId: string): Promise<CardSkillBinding[]> {
+    const cards = this.getFromStorage<Card[]>(this.STORAGE_KEYS.CARDS) || [];
+    const card = cards.find(c => c.id === cardId);
+    return card?.skillBindings || [];
+  }
+
+  async updateCardSkillBinding(cardId: string, binding: CardSkillBinding): Promise<void> {
+    const cards = this.getFromStorage<Card[]>(this.STORAGE_KEYS.CARDS) || [];
+    const cardIndex = cards.findIndex(c => c.id === cardId);
+    
+    if (cardIndex === -1) {
+      throw new Error(`Card ${cardId} not found`);
+    }
+
+    const card = cards[cardIndex];
+    const skillBindings = card.skillBindings || [];
+    const bindingIndex = skillBindings.findIndex(b => b.bindingId === binding.bindingId);
+    
+    if (bindingIndex >= 0) {
+      skillBindings[bindingIndex] = binding;
+    } else {
+      skillBindings.push(binding);
+    }
+
+    card.skillBindings = skillBindings;
+    card.updatedAt = new Date();
+    cards[cardIndex] = card;
+    
+    this.setToStorage(this.STORAGE_KEYS.CARDS, cards);
+    this.invalidateCache('cards');
+  }
+
+  async bindSkillToCard(cardId: string, bindingId: string, skillId: string): Promise<void> {
+    const cards = this.getFromStorage<Card[]>(this.STORAGE_KEYS.CARDS) || [];
+    const skills = this.getFromStorage<Skill[]>(this.STORAGE_KEYS.SKILLS) || [];
+    
+    const cardIndex = cards.findIndex(c => c.id === cardId);
+    const skill = skills.find(s => s.id === skillId);
+    
+    if (cardIndex === -1) {
+      throw new Error(`Card ${cardId} not found`);
+    }
+    
+    if (!skill) {
+      throw new Error(`Skill ${skillId} not found`);
+    }
+
+    const card = cards[cardIndex];
+    const skillBindings = card.skillBindings || [];
+    const bindingIndex = skillBindings.findIndex(b => b.bindingId === bindingId);
+    
+    if (bindingIndex >= 0) {
+      skillBindings[bindingIndex].skillId = skillId;
+      skillBindings[bindingIndex].skill = skill;
+      skillBindings[bindingIndex].level = 1;
+      skillBindings[bindingIndex].isUnlocked = true;
+      skillBindings[bindingIndex].attributes = { ...skill.attributes };
+    } else {
+      skillBindings.push({
+        bindingId,
+        skillId,
+        skill,
+        level: 1,
+        isUnlocked: true,
+        attributes: { ...skill.attributes }
+      });
+    }
+
+    card.skillBindings = skillBindings;
+    card.updatedAt = new Date();
+    cards[cardIndex] = card;
+    
+    this.setToStorage(this.STORAGE_KEYS.CARDS, cards);
+    this.invalidateCache('cards');
+  }
+
+  async unbindSkillFromCard(cardId: string, bindingId: string): Promise<void> {
+    const cards = this.getFromStorage<Card[]>(this.STORAGE_KEYS.CARDS) || [];
+    const cardIndex = cards.findIndex(c => c.id === cardId);
+    
+    if (cardIndex === -1) {
+      throw new Error(`Card ${cardId} not found`);
+    }
+
+    const card = cards[cardIndex];
+    const skillBindings = card.skillBindings || [];
+    const bindingIndex = skillBindings.findIndex(b => b.bindingId === bindingId);
+    
+    if (bindingIndex >= 0) {
+      skillBindings[bindingIndex].skillId = '';
+      skillBindings[bindingIndex].skill = undefined;
+      skillBindings[bindingIndex].level = 0;
+      skillBindings[bindingIndex].isUnlocked = false;
+      skillBindings[bindingIndex].attributes = {};
+    }
+
+    card.skillBindings = skillBindings;
+    card.updatedAt = new Date();
+    cards[cardIndex] = card;
+    
+    this.setToStorage(this.STORAGE_KEYS.CARDS, cards);
+    this.invalidateCache('cards');
   }
 } 
