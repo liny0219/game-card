@@ -3,15 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'react-toastify';
 import { useUser } from '../context/UserContext';
 import { useDataAdapter } from '../context/DataContext';
-import { CardPack, GachaResult, GachaAnimationState, GameplayType, CardRarity } from '../types';
+import { useGameplay } from '../context/GameplayContext';
+import { CardPack, GachaResult, GachaAnimationState, CardRarity } from '../types';
 import GlobalModal from '../components/GlobalModal';
 
 const GachaPage: React.FC = () => {
   const { user, refreshUser } = useUser();
   const dataAdapter = useDataAdapter();
+  const { currentGameplayType, getGameplayDisplayName } = useGameplay();
   const [cardPacks, setCardPacks] = useState<CardPack[]>([]);
-  const [filteredPacks, setFilteredPacks] = useState<CardPack[]>([]);
-  const [selectedGameplayType, setSelectedGameplayType] = useState<GameplayType | 'ALL'>('ALL');
   const [selectedPack, setSelectedPack] = useState<CardPack | null>(null);
   const [gachaResult, setGachaResult] = useState<GachaResult | null>(null);
   const [animationState, setAnimationState] = useState<GachaAnimationState>(GachaAnimationState.IDLE);
@@ -21,17 +21,21 @@ const GachaPage: React.FC = () => {
   const [packDetailLoading, setPackDetailLoading] = useState(false);
   const [showPackCards, setShowPackCards] = useState(false);
 
+
+
   useEffect(() => {
     loadCardPacks();
-  }, []);
-
-  useEffect(() => {
-    filterPacks();
-  }, [cardPacks, selectedGameplayType]);
+  }, [currentGameplayType]);
 
   const loadCardPacks = async () => {
+    if (!currentGameplayType) {
+      setCardPacks([]);
+      setLoading(false);
+      return;
+    }
+
     try {
-      const packs = await dataAdapter.getCardPacks();
+      const packs = await dataAdapter.getCardPacksByGameplayType(currentGameplayType);
       setCardPacks(packs);
     } catch (error) {
       toast.error('加载卡包失败');
@@ -40,24 +44,7 @@ const GachaPage: React.FC = () => {
     }
   };
 
-  const filterPacks = () => {
-    let filtered: CardPack[];
-    if (selectedGameplayType === 'ALL') {
-      filtered = cardPacks;
-    } else {
-      filtered = cardPacks.filter(pack => pack.gameplayType === selectedGameplayType);
-    }
-    setFilteredPacks(filtered);
-    
-    // 更新选中的卡包
-    if (filtered.length > 0) {
-      if (!selectedPack || !filtered.find(pack => pack.id === selectedPack.id)) {
-        setSelectedPack(filtered[0]);
-      }
-    } else {
-      setSelectedPack(null);
-    }
-  };
+
 
   const handleGacha = async (quantity: 1 | 10) => {
     if (!user || !selectedPack) return;
@@ -140,44 +127,30 @@ const GachaPage: React.FC = () => {
     <div className="max-w-6xl mx-auto space-y-4 md:space-y-6 px-4">
       {/* Header */}
       <div className="text-center">
-        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">抽卡系统</h1>
-        <p className="text-gray-400 text-sm md:text-base mb-4">选择卡包开始您的抽卡之旅</p>
-      </div>
+        <h1 className="text-2xl md:text-3xl font-bold text-white mb-2">
+          {currentGameplayType ? `抽卡系统 - ${getGameplayDisplayName(currentGameplayType)}` : '抽卡系统'}
+        </h1>
+        <p className="text-gray-400 text-sm md:text-base mb-4">
+          {currentGameplayType ? `当前玩法：${getGameplayDisplayName(currentGameplayType)}` : '选择卡包开始您的抽卡之旅'}
+        </p>
 
-      {/* 玩法类型过滤器 */}
-      <div className="flex justify-center mb-6">
-        <div className="flex items-center space-x-3">
-          <label className="text-sm font-medium text-gray-300">玩法类型：</label>
-          <select
-            value={selectedGameplayType}
-            onChange={(e) => setSelectedGameplayType(e.target.value as GameplayType | 'ALL')}
-            className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-            style={{ color: '#1f2937' }}
-          >
-            <option value="ALL">全部</option>
-            {Object.values(GameplayType).map(type => (
-              <option key={type} value={type}>
-                {type === GameplayType.DEFAULT ? '默认玩法' :
-                 type === GameplayType.BATTLE ? '战斗玩法' :
-                 type === GameplayType.COLLECTION ? '收集玩法' :
-                 type === GameplayType.STRATEGY ? '策略玩法' :
-                 type === GameplayType.ADVENTURE ? '冒险玩法' :
-                 type === GameplayType.PUZZLE ? '解谜玩法' : type}
-              </option>
-            ))}
-          </select>
-        </div>
+
       </div>
 
       {/* Card Packs 封面主视觉，点击弹窗 */}
-      {filteredPacks.length === 0 ? (
+      {!currentGameplayType ? (
+        <div className="text-center py-8">
+          <div className="text-gray-400 text-lg">请从首页选择游戏玩法</div>
+          <p className="text-gray-500 text-sm mt-2">每种玩法都有不同的卡包可供选择</p>
+        </div>
+      ) : cardPacks.length === 0 ? (
         <div className="text-center py-8">
           <div className="text-gray-400 text-lg">暂无该玩法类型的卡包</div>
-          <p className="text-gray-500 text-sm mt-2">请选择其他玩法类型或联系管理员添加卡包</p>
+          <p className="text-gray-500 text-sm mt-2">请联系管理员添加{getGameplayDisplayName(currentGameplayType)}的卡包</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3 md:gap-6">
-          {filteredPacks.map((pack) => (
+          {cardPacks.map((pack) => (
           <div
             key={pack.id}
             className="bg-gray-800 rounded-xl shadow flex flex-col items-center p-3 md:p-5 cursor-pointer hover:ring-2 hover:ring-blue-400 transition-all"

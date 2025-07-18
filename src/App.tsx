@@ -6,6 +6,7 @@ import 'react-toastify/dist/ReactToastify.css';
 
 import { DataContextProvider } from './context/DataContext';
 import { UserContextProvider } from './context/UserContext';
+import { GameplayContextProvider } from './context/GameplayContext';
 import Navbar from './components/Navbar';
 import HomePage from './pages/HomePage';
 import GachaPage from './pages/GachaPage';
@@ -24,23 +25,34 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+  // 生成统一的参数化路由
+  const generateGameplayRoutes = (): React.ReactElement[] => {
+    return [
+      <Route key="gacha" path="/:gameplayType/gacha" element={<GachaPage />} />,
+      <Route key="collection" path="/:gameplayType/collection" element={<CollectionPage />} />,
+      <Route key="statistics" path="/:gameplayType/statistics" element={<StatisticsPage />} />,
+      <Route key="history" path="/:gameplayType/history" element={<HistoryPage />} />,
+      <Route key="admin-gameplay" path="/admin/:gameplayType" element={<AdminPage />} />
+    ];
+  };
+
   return (
     <QueryClientProvider client={queryClient}>
       <DataContextProvider>
         <UserContextProvider>
           <Router>
-            <div className="min-h-screen bg-gray-900">
-              <Navbar />
-              <main className="container mx-auto px-4 py-8">
-                <Routes>
-                  <Route path="/" element={<HomePage />} />
-                  <Route path="/gacha" element={<GachaPage />} />
-                  <Route path="/collection" element={<CollectionPage />} />
-                  <Route path="/statistics" element={<StatisticsPage />} />
-                  <Route path="/history" element={<HistoryPage />} />
-                  <Route path="/admin" element={<AdminPage />} />
-                </Routes>
-              </main>
+            <GameplayContextProvider>
+              <div className="min-h-screen bg-gray-900">
+                <Navbar />
+                <main className="container mx-auto px-4 py-8">
+                  <Routes>
+                    <Route path="/" element={<HomePage />} />
+                    {/* 动态生成的玩法路由 */}
+                    {generateGameplayRoutes()}
+                    {/* 全局管理路由 */}
+                    <Route path="/admin" element={<AdminPage />} />
+                  </Routes>
+                </main>
               <ToastContainer
                 position="top-right"
                 autoClose={3000}
@@ -53,7 +65,8 @@ function App() {
                 pauseOnHover
                 theme="dark"
               />
-            </div>
+              </div>
+            </GameplayContextProvider>
           </Router>
         </UserContextProvider>
       </DataContextProvider>

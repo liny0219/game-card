@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Card, CardPack, CardTemplate, CardRarity, CurrencyType, GameplayType } from '../types';
 import { useDataAdapter } from '../context/DataContext';
+import { useGameplay } from '../context/GameplayContext';
 import { motion } from 'framer-motion';
 
 const AdminPage: React.FC = () => {
   const dataAdapter = useDataAdapter();
+  const { currentGameplayType, getGameplayDisplayName, getAllGameplayTypes, switchGameplayType } = useGameplay();
   const [activeTab, setActiveTab] = useState<'cards' | 'packs' | 'templates'>('cards');
   const [cards, setCards] = useState<Card[]>([]);
   const [packs, setPacks] = useState<CardPack[]>([]);
@@ -14,32 +16,31 @@ const AdminPage: React.FC = () => {
   const [editingTemplate, setEditingTemplate] = useState<CardTemplate | null>(null);
   const [jsonText, setJsonText] = useState<string>('');
   const [jsonError, setJsonError] = useState<string>('');
-  const [selectedGameplayType, setSelectedGameplayType] = useState<GameplayType | 'ALL'>('ALL');
 
   useEffect(() => {
-    loadData();
-  }, []);
-
-  // 过滤函数
-  const getFilteredCards = () => {
-    if (selectedGameplayType === 'ALL') {
-      return cards;
+    if (currentGameplayType) {
+      loadData();
     }
-    return cards.filter(card => card.gameplayType === selectedGameplayType);
-  };
+  }, [currentGameplayType]);
 
-  const getFilteredPacks = () => {
-    if (selectedGameplayType === 'ALL') {
-      return packs;
+  // 加载当前玩法的数据
+  const loadData = async () => {
+    if (!currentGameplayType) return;
+    
+    try {
+      const [allCards, allPacks, allTemplates] = await Promise.all([
+        dataAdapter.getCards(),
+        dataAdapter.getCardPacks(),
+        dataAdapter.getCardTemplates()
+      ]);
+      
+      // 只加载当前玩法的数据
+      setCards(allCards.filter(card => card.gameplayType === currentGameplayType));
+      setPacks(allPacks.filter(pack => pack.gameplayType === currentGameplayType));
+      setTemplates(allTemplates.filter(template => template.gameplayType === currentGameplayType));
+    } catch (error) {
+      console.error('Failed to load data:', error);
     }
-    return packs.filter(pack => pack.gameplayType === selectedGameplayType);
-  };
-
-  const getFilteredTemplates = () => {
-    if (selectedGameplayType === 'ALL') {
-      return templates;
-    }
-    return templates.filter(template => template.gameplayType === selectedGameplayType);
   };
 
   // 当编辑模板改变时，重置JSON编辑状态
@@ -188,21 +189,6 @@ const AdminPage: React.FC = () => {
     } catch (error) {
       console.error('导出部分数据失败:', error);
       alert('导出数据失败，请查看控制台了解详情');
-    }
-  };
-
-  const loadData = async () => {
-    try {
-      const [cardsData, packsData, templatesData] = await Promise.all([
-        dataAdapter.getCards(),
-        dataAdapter.getCardPacks(),
-        dataAdapter.getCardTemplates()
-      ]);
-      setCards(cardsData);
-      setPacks(packsData);
-      setTemplates(templatesData);
-    } catch (error) {
-      console.error('加载数据失败:', error);
     }
   };
 
@@ -526,12 +512,7 @@ const AdminPage: React.FC = () => {
             >
               {Object.values(GameplayType).map(type => (
                 <option key={type} value={type}>
-                  {type === GameplayType.DEFAULT ? '默认玩法' :
-                   type === GameplayType.BATTLE ? '战斗玩法' :
-                   type === GameplayType.COLLECTION ? '收集玩法' :
-                   type === GameplayType.STRATEGY ? '策略玩法' :
-                   type === GameplayType.ADVENTURE ? '冒险玩法' :
-                   type === GameplayType.PUZZLE ? '解谜玩法' : type}
+                  {getGameplayDisplayName(type)}
                 </option>
               ))}
             </select>
@@ -679,12 +660,7 @@ const AdminPage: React.FC = () => {
             >
               {Object.values(GameplayType).map(type => (
                 <option key={type} value={type}>
-                  {type === GameplayType.DEFAULT ? '默认玩法' :
-                   type === GameplayType.BATTLE ? '战斗玩法' :
-                   type === GameplayType.COLLECTION ? '收集玩法' :
-                   type === GameplayType.STRATEGY ? '策略玩法' :
-                   type === GameplayType.ADVENTURE ? '冒险玩法' :
-                   type === GameplayType.PUZZLE ? '解谜玩法' : type}
+                  {getGameplayDisplayName(type)}
                 </option>
               ))}
             </select>
@@ -1031,12 +1007,7 @@ const AdminPage: React.FC = () => {
             >
               {Object.values(GameplayType).map(type => (
                 <option key={type} value={type}>
-                  {type === GameplayType.DEFAULT ? '默认玩法' :
-                   type === GameplayType.BATTLE ? '战斗玩法' :
-                   type === GameplayType.COLLECTION ? '收集玩法' :
-                   type === GameplayType.STRATEGY ? '策略玩法' :
-                   type === GameplayType.ADVENTURE ? '冒险玩法' :
-                   type === GameplayType.PUZZLE ? '解谜玩法' : type}
+                  {getGameplayDisplayName(type)}
                 </option>
               ))}
             </select>
@@ -1111,7 +1082,16 @@ const AdminPage: React.FC = () => {
       
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">系统管理</h1>
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">
+              {currentGameplayType ? `系统管理 - ${getGameplayDisplayName(currentGameplayType)}` : '系统管理'}
+            </h1>
+            {currentGameplayType && (
+              <p className="text-gray-600 mt-1">
+                当前管理玩法：{getGameplayDisplayName(currentGameplayType)}
+              </p>
+            )}
+          </div>
           <div className="flex space-x-3">
             {/* 导入导出功能 */}
             <div className="flex space-x-2">
@@ -1216,32 +1196,43 @@ const AdminPage: React.FC = () => {
           </button>
         </div>
 
-        {/* 玩法类型过滤器 */}
-        <div className="mb-6">
-          <div className="flex items-center space-x-3">
-            <label className="text-sm font-medium text-gray-700">玩法类型过滤：</label>
-            <select
-              value={selectedGameplayType}
-              onChange={(e) => setSelectedGameplayType(e.target.value as GameplayType | 'ALL')}
-              className="px-3 py-2 border border-gray-300 rounded-md text-sm bg-white text-gray-900 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-              style={{ color: '#1f2937' }}
-            >
-              <option value="ALL">全部</option>
-              {Object.values(GameplayType).map(type => (
-                <option key={type} value={type}>
-                  {type === GameplayType.DEFAULT ? '默认玩法' :
-                   type === GameplayType.BATTLE ? '战斗玩法' :
-                   type === GameplayType.COLLECTION ? '收集玩法' :
-                   type === GameplayType.STRATEGY ? '策略玩法' :
-                   type === GameplayType.ADVENTURE ? '冒险玩法' :
-                   type === GameplayType.PUZZLE ? '解谜玩法' : type}
-                </option>
+        {/* 检查是否选择了玩法 */}
+        {!currentGameplayType ? (
+          <div className="max-w-4xl mx-auto">
+            <div className="text-center mb-8">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">选择要管理的游戏玩法</h2>
+              <p className="text-gray-600">请选择一个游戏玩法开始管理相关内容</p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {getAllGameplayTypes().map((gameplay) => (
+                <div
+                  key={gameplay.type}
+                  className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500"
+                  onClick={() => switchGameplayType(gameplay.type, 'admin')}
+                >
+                  <div className="flex items-center space-x-4">
+                    <div className="text-4xl">{gameplay.icon}</div>
+                    <div className="flex-1">
+                      <h3 className="text-xl font-semibold text-gray-900 mb-2">{gameplay.name}</h3>
+                      <p className="text-gray-600 text-sm mb-4">{gameplay.description}</p>
+                      <div className="flex space-x-2">
+                        <span className="px-3 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">卡片管理</span>
+                        <span className="px-3 py-1 bg-green-100 text-green-800 text-xs rounded-full">卡包管理</span>
+                        <span className="px-3 py-1 bg-purple-100 text-purple-800 text-xs rounded-full">模板管理</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 text-right">
+                    <span className="text-blue-600 text-sm font-medium">进入管理 →</span>
+                  </div>
+                </div>
               ))}
-            </select>
+            </div>
           </div>
-        </div>
-
-        {/* 数据统计信息和导入导出说明 */}
+        ) : (
+          <>
+            {/* 数据统计信息和导入导出说明 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
           <div className="bg-gray-100 rounded-lg p-4">
             <h3 className="text-lg font-medium text-gray-900 mb-3">数据统计</h3>
@@ -1352,7 +1343,7 @@ const AdminPage: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2 max-h-[600px] overflow-y-auto pr-4 pl-2">
-                  {getFilteredCards().map(card => (
+                  {cards.map(card => (
                     <div 
                       key={card.id} 
                       className={`bg-white rounded-lg p-3 shadow cursor-pointer transition-all hover:shadow-md relative ${
@@ -1452,7 +1443,7 @@ const AdminPage: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2 max-h-[600px] overflow-y-auto pr-4 pl-2">
-                  {getFilteredPacks().map(pack => (
+                  {packs.map(pack => (
                     <div 
                       key={pack.id} 
                       className={`bg-white rounded-lg p-3 shadow cursor-pointer transition-all hover:shadow-md relative ${
@@ -1564,7 +1555,7 @@ const AdminPage: React.FC = () => {
                 </div>
                 
                 <div className="space-y-2 max-h-[600px] overflow-y-auto pr-4 pl-2">
-                  {getFilteredTemplates().map(template => (
+                  {templates.map(template => (
                     <div 
                       key={template.id} 
                       className={`bg-white rounded-lg p-3 shadow cursor-pointer transition-all hover:shadow-md relative ${
@@ -1633,6 +1624,8 @@ const AdminPage: React.FC = () => {
             </div>
           </div>
         </div>
+          </>
+        )}
       </div>
     </div>
   );

@@ -1,51 +1,87 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useUser } from '../context/UserContext';
-import { CurrencyType } from '../types';
+import { useGameplay } from '../context/GameplayContext';
+import { CurrencyType, GameplayType } from '../types';
 
 const Navbar: React.FC = () => {
   const location = useLocation();
   const { user } = useUser();
+  const { currentGameplayType } = useGameplay();
 
-  const navigation = [
-    { name: '首页', href: '/', icon: '🏠' },
-    { name: '抽卡', href: '/gacha', icon: '🎲' },
-    { name: '收藏', href: '/collection', icon: '📚' },
-    { name: '统计', href: '/statistics', icon: '📊' },
-    { name: '历史', href: '/history', icon: '📋' },
-    { name: '管理', href: '/admin', icon: '⚙️' },
+  // 功能页面配置
+  const functionPages = [
+    { name: '抽卡', path: 'gacha', icon: '🎲' },
+    { name: '收藏', path: 'collection', icon: '📚' },
+    { name: '统计', path: 'statistics', icon: '📊' },
+    { name: '历史', path: 'history', icon: '📋' },
   ];
 
   const isActive = (path: string) => {
     return location.pathname === path;
   };
 
+  const isGameplayPageActive = (gameplayType: GameplayType, page: string) => {
+    return location.pathname === `/${gameplayType}/${page}`;
+  };
+
   return (
     <nav className="bg-gray-800 shadow-lg">
       <div className="container mx-auto px-4">
-        <div className="flex flex-col md:flex-row justify-between items-center py-4 space-y-4 md:space-y-0">
+        <div className="flex flex-col sm:flex-row justify-between items-center py-4 space-y-3 sm:space-y-0">
           {/* Logo */}
           <div className="flex items-center space-x-2">
             <div className="text-2xl">🎴</div>
             <span className="text-xl font-bold text-white">抽卡系统</span>
           </div>
 
-          {/* Navigation Links */}
-          <div className="flex flex-wrap justify-center gap-1">
-            {navigation.map((item) => (
-              <Link
-                key={item.name}
-                to={item.href}
-                className={`flex items-center space-x-1 md:space-x-2 px-2 md:px-4 py-2 rounded-md text-xs md:text-sm font-medium transition-colors ${
-                  isActive(item.href)
-                    ? 'bg-blue-600 text-white'
-                    : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-                }`}
-              >
-                <span className="text-sm md:text-base">{item.icon}</span>
-                <span className="hidden sm:inline">{item.name}</span>
-              </Link>
-            ))}
+          {/* Navigation */}
+          <div className="flex flex-wrap justify-center items-center gap-2 md:gap-4">
+            {/* 首页链接 */}
+            <Link
+              to="/"
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                isActive('/')
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+              }`}
+            >
+              <span>🏠</span>
+              <span>首页</span>
+            </Link>
+
+            {/* 功能导航 - 当在玩法页面时显示 */}
+            {currentGameplayType && (
+              <>
+                {functionPages.map((page) => (
+                  <Link
+                    key={page.path}
+                    to={`/${currentGameplayType}/${page.path}`}
+                    className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                      isGameplayPageActive(currentGameplayType, page.path)
+                        ? 'bg-blue-600 text-white'
+                        : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+                    }`}
+                  >
+                    <span>{page.icon}</span>
+                    <span className="hidden sm:inline">{page.name}</span>
+                  </Link>
+                ))}
+              </>
+            )}
+
+            {/* 管理链接 */}
+            <Link
+              to="/admin"
+              className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                location.pathname.startsWith('/admin')
+                  ? 'bg-blue-600 text-white'
+                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
+              }`}
+            >
+              <span>⚙️</span>
+              <span>管理</span>
+            </Link>
           </div>
 
           {/* User Info */}

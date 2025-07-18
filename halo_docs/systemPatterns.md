@@ -2,6 +2,46 @@
 
 ## 总体架构
 
+### 🎯 游戏玩法优先架构（Gameplay-First Architecture）
+**核心思想**：以游戏玩法类型作为系统的第一维度，所有功能模块都围绕当前选择的玩法展开。
+
+**架构特点**：
+- **URL驱动**：通过路由参数(/:gameplayType/page)确定当前玩法上下文
+- **上下文隔离**：每种玩法拥有独立的数据空间和功能逻辑
+- **一致的用户体验**：统一的页面结构和导航模式
+- **简化的管理**：移除复杂的过滤器，使用URL参数直接定位
+
+**实现模式**：
+```typescript
+// GameplayContext: 路径解析式上下文
+const extractGameplayTypeFromPath = (pathname: string): GameplayType | null => {
+  const segments = pathname.split('/').filter(Boolean);
+  if (segments.length > 0) {
+    const potentialGameplayType = segments[0];
+    const supportedTypes = Object.keys(GAMEPLAY_CONFIG) as GameplayType[];
+    if (supportedTypes.includes(potentialGameplayType as GameplayType)) {
+      return potentialGameplayType as GameplayType;
+    }
+  }
+  return null;
+};
+
+// 页面组件: 玩法优先的数据加载
+useEffect(() => {
+  if (user && currentGameplayType) {
+    loadGameplaySpecificData();
+  }
+}, [user, currentGameplayType]);
+```
+
+**路由结构**：
+- `/` - 首页（玩法选择）
+- `/:gameplayType/gacha` - 特定玩法的抽卡页面
+- `/:gameplayType/collection` - 特定玩法的收藏页面
+- `/:gameplayType/statistics` - 特定玩法的统计页面
+- `/:gameplayType/history` - 特定玩法的历史页面
+- `/admin/:gameplayType` - 特定玩法的管理页面
+
 ### 分层架构
 系统采用经典的分层架构模式，从上到下分为：
 1. **表现层（UI Layer）**：React组件和页面
