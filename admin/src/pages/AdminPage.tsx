@@ -394,8 +394,7 @@ const AdminPage: React.FC = () => {
       }
       
       await dataAdapter.updateCard(updatedCard);
-      const updatedCards = await dataAdapter.getCards();
-      setCards(updatedCards);
+      await loadData();
       setEditingCard(null);
     } catch (error) {
       console.error("保存卡片失败:", error);
@@ -405,8 +404,7 @@ const AdminPage: React.FC = () => {
   const handleSavePack = async (pack: CardPack) => {
     try {
       await dataAdapter.updateCardPack(pack);
-      const updatedPacks = await dataAdapter.getCardPacks();
-      setPacks(updatedPacks);
+      await loadData();
       setEditingPack(null);
     } catch (error) {
       console.error("保存卡包失败:", error);
@@ -416,8 +414,7 @@ const AdminPage: React.FC = () => {
   const handleSaveTemplate = async (template: CardTemplate) => {
     try {
       await dataAdapter.updateCardTemplate(template);
-      const updatedTemplates = await dataAdapter.getCardTemplates();
-      setTemplates(updatedTemplates);
+      await loadData();
       setEditingTemplate(null);
       setJsonText("");
       setJsonError("");
@@ -491,8 +488,7 @@ const AdminPage: React.FC = () => {
     if (confirm("确定要删除这张卡片吗？删除后将影响所有相关的卡包配置。")) {
       try {
         await dataAdapter.deleteCard(cardId);
-        const updatedCards = await dataAdapter.getCards();
-        setCards(updatedCards);
+        await loadData();
       } catch (error) {
         console.error("删除卡片失败:", error);
       }
@@ -503,8 +499,7 @@ const AdminPage: React.FC = () => {
     if (confirm("确定要删除这个卡包吗？删除后用户将无法从此卡包抽卡。")) {
       try {
         await dataAdapter.deleteCardPack(packId);
-        const updatedPacks = await dataAdapter.getCardPacks();
-        setPacks(updatedPacks);
+        await loadData();
       } catch (error) {
         console.error("删除卡包失败:", error);
       }
@@ -2242,8 +2237,7 @@ const AdminPage: React.FC = () => {
   const handleSaveSkill = async (skill: Skill) => {
     try {
       await dataAdapter.updateSkill(skill);
-      const updatedSkills = await dataAdapter.getSkills();
-      setSkills(updatedSkills);
+      await loadData();
       setEditingSkill(null);
     } catch (error) {
       console.error("保存技能失败:", error);
@@ -2253,8 +2247,7 @@ const AdminPage: React.FC = () => {
   const handleSaveSkillTemplate = async (template: SkillTemplate) => {
     try {
       await dataAdapter.updateSkillTemplate(template);
-      const updatedSkillTemplates = await dataAdapter.getSkillTemplates();
-      setSkillTemplates(updatedSkillTemplates);
+      await loadData();
       setEditingSkillTemplate(null);
       setJsonText("");
       setJsonError("");
@@ -2267,8 +2260,7 @@ const AdminPage: React.FC = () => {
     if (confirm("确定要删除这个技能吗？删除后将影响所有相关的卡包配置。")) {
       try {
         await dataAdapter.deleteSkill(skillId);
-        const updatedSkills = await dataAdapter.getSkills();
-        setSkills(updatedSkills);
+        await loadData();
       } catch (error) {
         console.error("删除技能失败:", error);
       }
@@ -2279,8 +2271,7 @@ const AdminPage: React.FC = () => {
     if (confirm("确定要删除这个技能模版吗？删除后将影响所有相关的卡包配置。")) {
       try {
         await dataAdapter.deleteSkillTemplate(templateId);
-        const updatedSkillTemplates = await dataAdapter.getSkillTemplates();
-        setSkillTemplates(updatedSkillTemplates);
+        await loadData();
       } catch (error) {
         console.error("删除技能模版失败:", error);
       }
@@ -2315,16 +2306,25 @@ const AdminPage: React.FC = () => {
 
       <div className="max-w-7xl mx-auto">
         <div className="flex justify-between items-center mb-8">
-          <div>
+          <div className="flex items-center gap-4">
             <h1 className="text-3xl font-bold text-gray-900">
-              {currentGameplayType
-                ? `系统管理 - ${getGameplayDisplayName(currentGameplayType)}`
-                : "系统管理"}
+              系统管理
             </h1>
             {currentGameplayType && (
-              <p className="text-gray-600 mt-1">
-                当前管理玩法：{getGameplayDisplayName(currentGameplayType)}
-              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-3xl font-bold text-gray-900">-</span>
+                <select
+                  value={currentGameplayType}
+                  onChange={(e) => switchGameplayType(e.target.value as GameplayType)}
+                  className="text-2xl font-bold p-1 border-gray-300 rounded-md bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+                >
+                  {getAllGameplayTypes().map((gameplay) => (
+                    <option key={gameplay.type} value={gameplay.type}>
+                      {gameplay.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
           <div className="flex space-x-3">
@@ -2468,7 +2468,7 @@ const AdminPage: React.FC = () => {
                 <div
                   key={gameplay.type}
                   className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow cursor-pointer border-2 border-transparent hover:border-blue-500"
-                  onClick={() => switchGameplayType(gameplay.type, "admin")}
+                  onClick={() => switchGameplayType(gameplay.type)}
                 >
                   <div className="flex items-center space-x-4">
                     <div className="text-4xl">{gameplay.icon}</div>
@@ -2654,7 +2654,7 @@ const AdminPage: React.FC = () => {
                               attributes: initialAttributes,
                               templateId: defaultTemplate.id,
                               skillBindings: initialSkillBindings,
-                              gameplayType: GameplayType.DEFAULT,
+                              gameplayType: currentGameplayType,
                               createdAt: new Date(),
                               updatedAt: new Date(),
                             };
@@ -2778,47 +2778,16 @@ const AdminPage: React.FC = () => {
                         <button
                           onClick={() => {
                             const newPack: CardPack = {
-                              id: `custom-pack-${Date.now()}`,
+                              id: `pack-${Date.now()}`,
                               name: "新卡包",
-                              description: "自定义卡包",
+                              description: "新卡包描述",
                               coverImageUrl: "/packs/default.jpg",
                               cost: 100,
                               currency: CurrencyType.GOLD,
                               isActive: true,
-                              gameplayType: GameplayType.DEFAULT,
-                              cardProbabilities: cards.reduce(
-                                (acc, card) => {
-                                  acc[card.id] =
-                                    card.rarity === CardRarity.N
-                                      ? 0.02
-                                      : card.rarity === CardRarity.R
-                                        ? 0.0125
-                                        : card.rarity === CardRarity.SR
-                                          ? 0.01
-                                          : card.rarity === CardRarity.SSR
-                                            ? 0.008
-                                            : card.rarity === CardRarity.UR
-                                              ? 0.003
-                                              : 0.001;
-                                  return acc;
-                                },
-                                {} as Record<string, number>
-                              ),
-
-                              availableCards: cards.map((c) => c.id),
-                              pitySystem: {
-                                maxPity: 90,
-                                guaranteedCards: cards
-                                  .filter(
-                                    (c) =>
-                                      c.rarity === CardRarity.SSR ||
-                                      c.rarity === CardRarity.UR ||
-                                      c.rarity === CardRarity.LR
-                                  )
-                                  .map((c) => c.id),
-                                softPityStart: 75,
-                                resetOnTrigger: true,
-                              },
+                              cardProbabilities: {},
+                              availableCards: [],
+                              gameplayType: currentGameplayType,
                               createdAt: new Date(),
                               updatedAt: new Date(),
                             };
@@ -2964,18 +2933,15 @@ const AdminPage: React.FC = () => {
                         <button
                           onClick={() => {
                             const newTemplate: CardTemplate = {
-                              id: `custom-template-${Date.now()}`,
+                              id: `template-${Date.now()}`,
                               name: "新模版",
-                              description: "自定义卡片模版",
+                              description: "新模版描述",
                               schema: {
                                 type: "object",
-                                properties: {
-                                  attack: { type: "number", minimum: 0 },
-                                  defense: { type: "number", minimum: 0 },
-                                },
-                                required: ["attack", "defense"],
+                                properties: {},
+                                required: [],
                               },
-                              gameplayType: GameplayType.DEFAULT,
+                              gameplayType: currentGameplayType,
                               createdAt: new Date(),
                               updatedAt: new Date(),
                             };
@@ -3067,31 +3033,18 @@ const AdminPage: React.FC = () => {
                         <button
                           onClick={() => {
                             const newSkill: Skill = {
-                              id: `custom-skill-${Date.now()}`,
+                              id: `skill-${Date.now()}`,
                               name: "新技能",
-                              description: "自定义技能",
+                              description: "新技能描述",
                               rarity: SkillRarity.N,
                               skillType: SkillType.ATTACK,
                               iconUrl: "/assets/skill_icon.png",
-                              templateId:
-                                skillTemplates[0]?.id || "attack-skill",
-                              attributes: {
-                                damage: 50,
-                                criticalChance: 0.05,
-                              },
+                              templateId: skillTemplates[0]?.id || "",
+                              attributes: {},
                               maxLevel: 10,
-                              levelScaling: {
-                                damage: 5,
-                                criticalChance: 0.01,
-                              },
-                              unlockConditions: [
-                                {
-                                  type: "level",
-                                  value: 1,
-                                  description: "角色等级达到1级",
-                                },
-                              ],
-                              gameplayType: GameplayType.DEFAULT,
+                              levelScaling: {},
+                              unlockConditions: [],
+                              gameplayType: currentGameplayType,
                               createdAt: new Date(),
                               updatedAt: new Date(),
                             };
@@ -3216,27 +3169,16 @@ const AdminPage: React.FC = () => {
                         <button
                           onClick={() => {
                             const newSkillTemplate: SkillTemplate = {
-                              id: `custom-skill-template-${Date.now()}`,
+                              id: `skill-template-${Date.now()}`,
                               name: "新技能模版",
-                              description: "自定义技能模版",
+                              description: "新技能模版描述",
                               skillType: SkillType.ATTACK,
-                              targetType: SkillTargetType.SINGLE_ENEMY,
+                              targetType: SkillTargetType.SELF,
                               range: 1,
                               castTime: 0,
-                              cooldown: 3,
-                              manaCost: 20,
-                              effects: [
-                                {
-                                  type: SkillEffectType.DAMAGE,
-                                  target: SkillTargetType.SINGLE_ENEMY,
-                                  duration: "instant",
-                                  magnitude: {
-                                    base: 100,
-                                    scaling: 10,
-                                    attribute: "damage",
-                                  },
-                                },
-                              ],
+                              cooldown: 5,
+                              manaCost: 10,
+                              effects: [],
                               schema: {
                                 type: "object",
                                 properties: {
@@ -3245,16 +3187,10 @@ const AdminPage: React.FC = () => {
                                     minimum: 0,
                                     title: "伤害值",
                                   },
-                                  criticalChance: {
-                                    type: "number",
-                                    minimum: 0,
-                                    maximum: 1,
-                                    title: "暴击率",
-                                  },
                                 },
                                 required: ["damage"],
                               },
-                              gameplayType: GameplayType.DEFAULT,
+                              gameplayType: currentGameplayType,
                               createdAt: new Date(),
                               updatedAt: new Date(),
                             };

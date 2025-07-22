@@ -13,7 +13,6 @@ import GachaPage from './pages/GachaPage';
 import CollectionPage from './pages/CollectionPage';
 import StatisticsPage from './pages/StatisticsPage';
 import HistoryPage from './pages/HistoryPage';
-import AdminPage from './pages/AdminPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,7 +31,6 @@ function App() {
       <Route key="collection" path="/:gameplayType/collection" element={<CollectionPage />} />,
       <Route key="statistics" path="/:gameplayType/statistics" element={<StatisticsPage />} />,
       <Route key="history" path="/:gameplayType/history" element={<HistoryPage />} />,
-      <Route key="admin-gameplay" path="/admin/:gameplayType" element={<AdminPage />} />
     ];
   };
 
@@ -49,8 +47,6 @@ function App() {
                     <Route path="/" element={<HomePage />} />
                     {/* 动态生成的玩法路由 */}
                     {generateGameplayRoutes()}
-                    {/* 全局管理路由 */}
-                    <Route path="/admin" element={<AdminPage />} />
                   </Routes>
                 </main>
               <ToastContainer

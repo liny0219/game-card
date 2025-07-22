@@ -69,19 +69,6 @@ const Navbar: React.FC = () => {
                 ))}
               </>
             )}
-
-            {/* 管理链接 */}
-            <Link
-              to="/admin"
-              className={`flex items-center space-x-2 px-4 py-2 rounded-md font-medium transition-colors ${
-                location.pathname.startsWith('/admin')
-                  ? 'bg-blue-600 text-white'
-                  : 'text-gray-300 hover:bg-gray-700 hover:text-white'
-              }`}
-            >
-              <span>⚙️</span>
-              <span>管理</span>
-            </Link>
           </div>
 
           {/* User Info */}
