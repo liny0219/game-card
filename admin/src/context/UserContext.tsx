@@ -27,16 +27,15 @@ export function UserContextProvider({ children }: UserContextProviderProps) {
 
   const initializeUser = async () => {
     try {
-      let currentUser = await dataAdapter.getCurrentUser();
-      
-      if (!currentUser) {
-        // 创建默认用户
-        currentUser = await dataAdapter.createDefaultUser();
+      let user = await dataAdapter.getCurrentUser();
+      // For admin panel, we don't create a default user.
+      // We might want to just show a login screen or a user selector in the future.
+      if (!user) {
+        console.warn("No current user found. Admin functions might be limited.");
       }
-      
-      setUser(currentUser);
-    } catch (error) {
-      console.error('Failed to initialize user:', error);
+      setUser(user);
+    } catch (err) {
+      console.error("Failed to initialize user:", err);
     } finally {
       setLoading(false);
     }

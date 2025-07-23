@@ -1,0 +1,77 @@
+[
+  {
+    "id": "tpl-default-hero",
+    "name": "基础卡片模版",
+    "description": "标准的卡片模版，包含基本属性",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "attack": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2000,
+          "default": 100,
+          "title": "攻击力",
+          "description": "卡片的攻击力值"
+        },
+        "defense": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 2000,
+          "default": 80,
+          "title": "防御力",
+          "description": "卡片的防御力值"
+        }
+      },
+      "required": [
+        "attack",
+        "defense"
+      ]
+    },
+    "skillBindings": [
+      {
+        "id": "basic-skill-1",
+        "name": "技能1",
+        "description": "基础攻击技能，可对敌人造成伤害",
+        "skillId": "basic-attack",
+        "skill": {
+          "id": "basic-attack",
+          "name": "基础攻击",
+          "description": "简单的物理攻击",
+          "rarity": "N",
+          "skillType": "ATTACK",
+          "iconUrl": "/assets/skill_basic_attack.png",
+          "templateId": "attack-skill",
+          "attributes": {
+            "damage": 50,
+            "criticalChance": 0.05
+          },
+          "maxLevel": 10,
+          "levelScaling": {
+            "damage": 5,
+            "criticalChance": 0.01
+          },
+          "unlockConditions": [
+            {
+              "type": "level",
+              "value": 1,
+              "description": "角色等级达到1级"
+            }
+          ],
+          "gameplayType": "DEFAULT",
+          "createdAt": "2025-07-23T16:06:22.295Z",
+          "updatedAt": "2025-07-23T16:06:22.295Z"
+        },
+        "maxLevel": 10,
+        "unlockCondition": {
+          "type": "level",
+          "value": 1,
+          "description": "角色等级达到1级解锁"
+        }
+      }
+    ],
+    "gameplayType": "DEFAULT",
+    "createdAt": "2025-07-23T16:06:22.295Z",
+    "updatedAt": "2025-07-23T16:06:22.295Z"
+  }
+]

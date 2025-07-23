@@ -1,0 +1,34 @@
+[
+  {
+    "id": "card-001",
+    "name": "哥布林",
+    "description": "弱小的绿皮生物",
+    "rarity": "N",
+    "imageUrl": "/assets/card_n.png",
+    "attributes": {
+      "attack": 50,
+      "defense": 20
+    },
+    "templateId": "tpl-default-hero",
+    "gameplayType": "DEFAULT",
+    "skillBindings": [],
+    "createdAt": "2025-07-23T16:06:22.295Z",
+    "updatedAt": "2025-07-23T16:06:22.295Z"
+  },
+  {
+    "id": "card-002",
+    "name": "兽人",
+    "description": "强壮的战士",
+    "rarity": "R",
+    "imageUrl": "/assets/card_r.png",
+    "attributes": {
+      "attack": 100,
+      "defense": 80
+    },
+    "templateId": "tpl-default-hero",
+    "gameplayType": "DEFAULT",
+    "skillBindings": [],
+    "createdAt": "2025-07-23T16:06:22.295Z",
+    "updatedAt": "2025-07-23T16:06:22.295Z"
+  }
+]

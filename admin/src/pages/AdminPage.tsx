@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Card,
   CardPack,
@@ -14,13 +14,14 @@ import {
   SkillEffectType,
   SkillBinding,
 } from "../types";
-import { useDataAdapter } from "../context/DataContext";
+import { useDataContext, useDataAdapter } from "../context/DataContext";
 import { useGameplay } from "../context/GameplayContext";
 import { useLocation, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 
 const AdminPage: React.FC = () => {
   const dataAdapter = useDataAdapter();
+  const { serverState } = useDataContext();
   const {
     currentGameplayType,
     getGameplayDisplayName,
@@ -29,6 +30,29 @@ const AdminPage: React.FC = () => {
   } = useGameplay();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Memoize filtered data to prevent re-renders on every state change
+  const cards = useMemo(() => {
+    console.log("Filtering cards. currentGameplayType:", currentGameplayType);
+    console.log("All cards from serverState:", serverState.cards);
+    return serverState.cards.filter(c => c.gameplayType === currentGameplayType);
+  }, [serverState.cards, currentGameplayType]);
+  
+  const packs = useMemo(() => {
+    return serverState.cardPacks.filter(p => p.gameplayType === currentGameplayType);
+  }, [serverState.cardPacks, currentGameplayType]);
+  
+  const templates = useMemo(() => {
+    return serverState.cardTemplates.filter(t => t.gameplayType === currentGameplayType);
+  }, [serverState.cardTemplates, currentGameplayType]);
+  
+  const skills = useMemo(() => {
+    return serverState.skills.filter(s => s.gameplayType === currentGameplayType);
+  }, [serverState.skills, currentGameplayType]);
+  
+  const skillTemplates = useMemo(() => {
+    return serverState.skillTemplates.filter(st => st.gameplayType === currentGameplayType);
+  }, [serverState.skillTemplates, currentGameplayType]);
 
   // 从URL参数中获取初始tab状态，如果没有则默认为'cards'
   const getInitialTab = ():
@@ -53,11 +77,7 @@ const AdminPage: React.FC = () => {
   const [activeTab, setActiveTab] = useState<
     "cards" | "packs" | "templates" | "skills" | "skillTemplates"
   >(getInitialTab);
-  const [cards, setCards] = useState<Card[]>([]);
-  const [packs, setPacks] = useState<CardPack[]>([]);
-  const [templates, setTemplates] = useState<CardTemplate[]>([]);
-  const [skills, setSkills] = useState<Skill[]>([]);
-  const [skillTemplates, setSkillTemplates] = useState<SkillTemplate[]>([]);
+  
   const [editingCard, setEditingCard] = useState<Card | null>(null);
   const [editingPack, setEditingPack] = useState<CardPack | null>(null);
   const [editingTemplate, setEditingTemplate] = useState<CardTemplate | null>(
@@ -88,52 +108,6 @@ const AdminPage: React.FC = () => {
   };
 
   useEffect(() => {
-    if (currentGameplayType) {
-      loadData();
-    }
-  }, [currentGameplayType]);
-
-  // 加载当前玩法的数据
-  const loadData = async () => {
-    if (!currentGameplayType) return;
-
-    try {
-      const [allCards, allPacks, allTemplates, allSkills, allSkillTemplates] =
-        await Promise.all([
-          dataAdapter.getCards(),
-          dataAdapter.getCardPacks(),
-          dataAdapter.getCardTemplates(),
-          dataAdapter.getSkills(),
-          dataAdapter.getSkillTemplates(),
-        ]);
-
-      // 只加载当前玩法的数据
-      setCards(
-        allCards.filter((card) => card.gameplayType === currentGameplayType)
-      );
-      setPacks(
-        allPacks.filter((pack) => pack.gameplayType === currentGameplayType)
-      );
-      setTemplates(
-        allTemplates.filter(
-          (template) => template.gameplayType === currentGameplayType
-        )
-      );
-      setSkills(
-        allSkills.filter((skill) => skill.gameplayType === currentGameplayType)
-      );
-      setSkillTemplates(
-        allSkillTemplates.filter(
-          (template) => template.gameplayType === currentGameplayType
-        )
-      );
-    } catch (error) {
-      console.error("Failed to load data:", error);
-    }
-  };
-
-  // 当编辑模板改变时，重置JSON编辑状态
-  useEffect(() => {
     if (editingTemplate) {
       setJsonText(JSON.stringify(editingTemplate.schema, null, 2));
       setJsonError("");
@@ -141,7 +115,7 @@ const AdminPage: React.FC = () => {
       setJsonText("");
       setJsonError("");
     }
-  }, [editingTemplate?.id]); // 只在模板ID改变时重置
+  }, [editingTemplate?.id]);
 
   // 数据导入导出功能
   const exportData = () => {
@@ -358,43 +332,7 @@ const AdminPage: React.FC = () => {
 
   const handleSaveCard = async (card: Card) => {
     try {
-      // 获取当前模板的技能绑定配置
-      const currentTemplate = templates.find(t => t.id === card.templateId);
-      let updatedCard = { ...card };
-      
-      if (currentTemplate?.skillBindings) {
-        // 确保卡片有技能绑定数组
-        const cardSkillBindings = card.skillBindings || [];
-        
-        // 为模板中的每个技能绑定创建或更新卡片技能绑定
-        const updatedSkillBindings = currentTemplate.skillBindings.map(templateBinding => {
-          const existingBinding = cardSkillBindings.find(cb => cb.bindingId === templateBinding.id);
-          
-          if (existingBinding) {
-            // 保留现有的技能绑定信息，但更新技能实例
-            return {
-              ...existingBinding,
-              skillId: templateBinding.skillId || existingBinding.skillId,
-              skill: templateBinding.skill || existingBinding.skill
-            };
-          } else {
-            // 创建新的技能绑定，使用模板的技能实例
-            return {
-              bindingId: templateBinding.id,
-              skillId: templateBinding.skillId || '',
-              skill: templateBinding.skill,
-              level: 0,
-              isUnlocked: false,
-              attributes: templateBinding.skill?.attributes || {}
-            };
-          }
-        });
-        
-        updatedCard.skillBindings = updatedSkillBindings;
-      }
-      
-      await dataAdapter.updateCard(updatedCard);
-      await loadData();
+      await dataAdapter.updateCard(card);
       setEditingCard(null);
     } catch (error) {
       console.error("保存卡片失败:", error);
@@ -404,7 +342,6 @@ const AdminPage: React.FC = () => {
   const handleSavePack = async (pack: CardPack) => {
     try {
       await dataAdapter.updateCardPack(pack);
-      await loadData();
       setEditingPack(null);
     } catch (error) {
       console.error("保存卡包失败:", error);
@@ -414,7 +351,6 @@ const AdminPage: React.FC = () => {
   const handleSaveTemplate = async (template: CardTemplate) => {
     try {
       await dataAdapter.updateCardTemplate(template);
-      await loadData();
       setEditingTemplate(null);
       setJsonText("");
       setJsonError("");
@@ -423,72 +359,30 @@ const AdminPage: React.FC = () => {
     }
   };
 
-  // 技能绑定处理函数
-  const handleAddSkillBinding = () => {
-    if (!editingTemplate) return;
-    
-    // 计算下一个技能编号
-    const existingSkills = editingTemplate.skillBindings || [];
-    const nextSkillNumber = existingSkills.length + 1;
-    
-    // 根据技能编号设置合理的默认解锁等级
-    const defaultUnlockLevel = Math.max(1, Math.floor(nextSkillNumber * 2));
-    
-                  const newBinding: SkillBinding = {
-                id: `skill-${Date.now()}`,
-                name: `技能${nextSkillNumber}`,
-                description: '技能描述',
-                skillId: '',
-                maxLevel: 10,
-                unlockCondition: {
-                  type: 'level',
-                  value: defaultUnlockLevel,
-                  description: `角色等级达到${defaultUnlockLevel}级解锁`
-                }
-              };
-
-    setEditingTemplate({
-      ...editingTemplate,
-      skillBindings: [...(editingTemplate.skillBindings || []), newBinding]
-    });
+  const handleSaveSkill = async (skill: Skill) => {
+    try {
+      await dataAdapter.updateSkill(skill);
+      setEditingSkill(null);
+    } catch (error) {
+      console.error("保存技能失败:", error);
+    }
   };
 
-  const handleRemoveSkillBinding = (bindingId: string) => {
-    if (!editingTemplate) return;
-    
-    // 移除指定技能并重新编号
-    const updatedBindings = editingTemplate.skillBindings?.filter(b => b.id !== bindingId) || [];
-    
-    // 重新编号技能
-    const renumberedBindings = updatedBindings.map((binding, index) => ({
-      ...binding,
-      name: `技能${index + 1}`
-    }));
-    
-    setEditingTemplate({
-      ...editingTemplate,
-      skillBindings: renumberedBindings
-    });
-  };
-
-  const handleUpdateSkillBinding = (bindingId: string, field: keyof SkillBinding, value: any) => {
-    if (!editingTemplate) return;
-    
-    setEditingTemplate({
-      ...editingTemplate,
-      skillBindings: editingTemplate.skillBindings?.map(binding => 
-        binding.id === bindingId 
-          ? { ...binding, [field]: value }
-          : binding
-      ) || []
-    });
+  const handleSaveSkillTemplate = async (template: SkillTemplate) => {
+    try {
+      await dataAdapter.updateSkillTemplate(template);
+      setEditingSkillTemplate(null);
+      setJsonText("");
+      setJsonError("");
+    } catch (error) {
+      console.error("保存技能模版失败:", error);
+    }
   };
 
   const handleDeleteCard = async (cardId: string) => {
     if (confirm("确定要删除这张卡片吗？删除后将影响所有相关的卡包配置。")) {
       try {
         await dataAdapter.deleteCard(cardId);
-        await loadData();
       } catch (error) {
         console.error("删除卡片失败:", error);
       }
@@ -499,9 +393,28 @@ const AdminPage: React.FC = () => {
     if (confirm("确定要删除这个卡包吗？删除后用户将无法从此卡包抽卡。")) {
       try {
         await dataAdapter.deleteCardPack(packId);
-        await loadData();
       } catch (error) {
         console.error("删除卡包失败:", error);
+      }
+    }
+  };
+
+  const handleDeleteSkill = async (skillId: string) => {
+    if (confirm("确定要删除这个技能吗？删除后将影响所有相关的卡包配置。")) {
+      try {
+        await dataAdapter.deleteSkill(skillId);
+      } catch (error) {
+        console.error("删除技能失败:", error);
+      }
+    }
+  };
+
+  const handleDeleteSkillTemplate = async (templateId: string) => {
+    if (confirm("确定要删除这个技能模版吗？删除后将影响所有相关的卡包配置。")) {
+      try {
+        await dataAdapter.deleteSkillTemplate(templateId);
+      } catch (error) {
+        console.error("删除技能模版失败:", error);
       }
     }
   };
@@ -2234,48 +2147,64 @@ const AdminPage: React.FC = () => {
     );
   };
 
-  const handleSaveSkill = async (skill: Skill) => {
-    try {
-      await dataAdapter.updateSkill(skill);
-      await loadData();
-      setEditingSkill(null);
-    } catch (error) {
-      console.error("保存技能失败:", error);
-    }
+  const handleAddSkillBinding = () => {
+    if (!editingTemplate) return;
+    
+    // 计算下一个技能编号
+    const existingSkills = editingTemplate.skillBindings || [];
+    const nextSkillNumber = existingSkills.length + 1;
+    
+    // 根据技能编号设置合理的默认解锁等级
+    const defaultUnlockLevel = Math.max(1, Math.floor(nextSkillNumber * 2));
+    
+                  const newBinding: SkillBinding = {
+                id: `skill-${Date.now()}`,
+                name: `技能${nextSkillNumber}`,
+                description: '技能描述',
+                skillId: '',
+                maxLevel: 10,
+                unlockCondition: {
+                  type: 'level',
+                  value: defaultUnlockLevel,
+                  description: `角色等级达到${defaultUnlockLevel}级解锁`
+                }
+              };
+
+    setEditingTemplate({
+      ...editingTemplate,
+      skillBindings: [...(editingTemplate.skillBindings || []), newBinding]
+    });
   };
 
-  const handleSaveSkillTemplate = async (template: SkillTemplate) => {
-    try {
-      await dataAdapter.updateSkillTemplate(template);
-      await loadData();
-      setEditingSkillTemplate(null);
-      setJsonText("");
-      setJsonError("");
-    } catch (error) {
-      console.error("保存技能模版失败:", error);
-    }
+  const handleRemoveSkillBinding = (bindingId: string) => {
+    if (!editingTemplate) return;
+    
+    // 移除指定技能并重新编号
+    const updatedBindings = editingTemplate.skillBindings?.filter(b => b.id !== bindingId) || [];
+    
+    // 重新编号技能
+    const renumberedBindings = updatedBindings.map((binding, index) => ({
+      ...binding,
+      name: `技能${index + 1}`
+    }));
+    
+    setEditingTemplate({
+      ...editingTemplate,
+      skillBindings: renumberedBindings
+    });
   };
 
-  const handleDeleteSkill = async (skillId: string) => {
-    if (confirm("确定要删除这个技能吗？删除后将影响所有相关的卡包配置。")) {
-      try {
-        await dataAdapter.deleteSkill(skillId);
-        await loadData();
-      } catch (error) {
-        console.error("删除技能失败:", error);
-      }
-    }
-  };
-
-  const handleDeleteSkillTemplate = async (templateId: string) => {
-    if (confirm("确定要删除这个技能模版吗？删除后将影响所有相关的卡包配置。")) {
-      try {
-        await dataAdapter.deleteSkillTemplate(templateId);
-        await loadData();
-      } catch (error) {
-        console.error("删除技能模版失败:", error);
-      }
-    }
+  const handleUpdateSkillBinding = (bindingId: string, field: keyof SkillBinding, value: any) => {
+    if (!editingTemplate) return;
+    
+    setEditingTemplate({
+      ...editingTemplate,
+      skillBindings: editingTemplate.skillBindings?.map(binding => 
+        binding.id === bindingId 
+          ? { ...binding, [field]: value }
+          : binding
+      ) || []
+    });
   };
 
   return (

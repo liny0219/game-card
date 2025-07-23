@@ -1,0 +1,102 @@
+[
+  {
+    "id": "attack-skill",
+    "name": "攻击技能模板",
+    "description": "基础攻击技能模板，包含伤害计算",
+    "skillType": "ATTACK",
+    "targetType": "SINGLE_ENEMY",
+    "range": 1,
+    "castTime": 0,
+    "cooldown": 3,
+    "manaCost": 20,
+    "effects": [
+      {
+        "type": "DAMAGE",
+        "target": "SINGLE_ENEMY",
+        "duration": "instant",
+        "magnitude": {
+          "base": 100,
+          "scaling": 10,
+          "attribute": "attack"
+        }
+      }
+    ],
+    "schema": {
+      "type": "object",
+      "properties": {
+        "damage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000,
+          "default": 100,
+          "title": "基础伤害",
+          "description": "技能的基础伤害值"
+        },
+        "criticalChance": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 0.1,
+          "title": "暴击率",
+          "description": "技能暴击的概率"
+        }
+      },
+      "required": [
+        "damage",
+        "criticalChance"
+      ]
+    },
+    "gameplayType": "DEFAULT",
+    "createdAt": "2025-07-23T16:06:22.295Z",
+    "updatedAt": "2025-07-23T16:06:22.295Z"
+  },
+  {
+    "id": "heal-skill",
+    "name": "治疗技能模板",
+    "description": "基础治疗技能模板，包含治疗计算",
+    "skillType": "HEAL",
+    "targetType": "SINGLE_ALLY",
+    "range": 1,
+    "castTime": 1,
+    "cooldown": 5,
+    "manaCost": 30,
+    "effects": [
+      {
+        "type": "HEAL",
+        "target": "SINGLE_ALLY",
+        "duration": "instant",
+        "magnitude": {
+          "base": 80,
+          "scaling": 8,
+          "attribute": "healing"
+        }
+      }
+    ],
+    "schema": {
+      "type": "object",
+      "properties": {
+        "healing": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 500,
+          "default": 80,
+          "title": "治疗量",
+          "description": "技能的治疗量"
+        },
+        "overheal": {
+          "type": "boolean",
+          "default": false,
+          "title": "允许过量治疗",
+          "description": "是否允许治疗量超过最大生命值"
+        }
+      },
+      "required": [
+        "healing",
+        "overheal"
+      ]
+    },
+    "gameplayType": "DEFAULT",
+    "createdAt": "2025-07-23T16:06:22.295Z",
+    "updatedAt": "2025-07-23T16:06:22.295Z"
+  }
+]

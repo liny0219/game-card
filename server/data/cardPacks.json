@@ -1,0 +1,30 @@
+[
+  {
+    "id": "standard-pack",
+    "name": "标准卡包",
+    "description": "包含各种稀有度卡牌的标准卡包",
+    "coverImageUrl": "/assets/pack_standard.png",
+    "cost": 100,
+    "currency": "GOLD",
+    "isActive": true,
+    "gameplayType": "DEFAULT",
+    "cardProbabilities": {
+      "card-001": 0.6,
+      "card-002": 0.4
+    },
+    "availableCards": [
+      "card-001",
+      "card-002"
+    ],
+    "pitySystem": {
+      "maxPity": 90,
+      "guaranteedCards": [
+        "card-002"
+      ],
+      "softPityStart": 75,
+      "resetOnTrigger": true
+    },
+    "createdAt": "2025-07-23T16:06:22.295Z",
+    "updatedAt": "2025-07-23T16:06:22.295Z"
+  }
+]

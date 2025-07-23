@@ -1,35 +1,71 @@
 import { Room, Client } from "@colyseus/core";
-import { AdminRoomState, CardSchema, CardPackSchema, CardTemplateSchema, SkillSchema, SkillTemplateSchema } from "./schema/AdminRoomState.js";
+import { 
+  AdminRoomState, CardSchema, CardPackSchema, CardTemplateSchema, SkillSchema, SkillTemplateSchema 
+} from "./schema/AdminRoomState.js";
 import { FileSystemAdapter } from "../adapters/FileSystemAdapter.js";
-import { Card, CardPack, CardTemplate, Skill, SkillTemplate } from "../types/index.js";
+import { ArraySchema } from "@colyseus/schema";
 
 export class AdminRoom extends Room<AdminRoomState> {
-  private dataAdapter!: FileSystemAdapter;
+  private dataAdapter = new FileSystemAdapter();
 
-  async onCreate(options: any) {
+  onCreate(options: any) {
     this.setState(new AdminRoomState());
-    this.dataAdapter = new FileSystemAdapter();
-
-    await this.loadInitialData();
-
-    // Register message handlers for admin operations
-    this.onMessage("updateCard", this.handleUpdateCard.bind(this));
-    this.onMessage("deleteCard", this.handleDeleteCard.bind(this));
-    this.onMessage("updateCardPack", this.handleUpdateCardPack.bind(this));
-    this.onMessage("deleteCardPack", this.handleDeleteCardPack.bind(this));
-    this.onMessage("updateCardTemplate", this.handleUpdateCardTemplate.bind(this));
-    this.onMessage("updateSkill", this.handleUpdateSkill.bind(this));
-    this.onMessage("deleteSkill", this.handleDeleteSkill.bind(this));
-    this.onMessage("updateSkillTemplate", this.handleUpdateSkillTemplate.bind(this));
-    this.onMessage("deleteSkillTemplate", this.handleDeleteSkillTemplate.bind(this));
+    
+    // 设置最大客户端数量
+    this.maxClients = 10;
+    
+    // 加载初始数据
+    this.loadInitialData();
+    
+    // 设置消息处理器
+    this.onMessage("*", (client, type, message) => {
+      this.handleMessage(client, { type, data: message });
+    });
   }
 
-  async onJoin(client: Client, options: any) {
-    console.log(client.sessionId, "joined admin room!");
+  onJoin(client: Client, options: any) {
+    console.log(`${client.sessionId} joined admin room!`);
+  }
+
+  private handleMessage(client: Client, message: any) {
+    const { type, data } = message;
+    
+    switch (type) {
+      case 'UPDATE_CARD':
+        this.handleUpdate(this.dataAdapter.updateCard, this.loadAndPopulateCards, data);
+        break;
+      case 'DELETE_CARD':
+        this.handleDelete(this.dataAdapter.deleteCard, this.loadAndPopulateCards, data.id);
+        break;
+      case 'UPDATE_CARD_PACK':
+        this.handleUpdate(this.dataAdapter.updateCardPack, this.loadAndPopulateCardPacks, data);
+        break;
+      case 'DELETE_CARD_PACK':
+        this.handleDelete(this.dataAdapter.deleteCardPack, this.loadAndPopulateCardPacks, data.id);
+        break;
+      case 'UPDATE_CARD_TEMPLATE':
+        this.handleUpdate(this.dataAdapter.updateCardTemplate, this.loadAndPopulateCardTemplates, data);
+        break;
+      case 'DELETE_CARD_TEMPLATE':
+        this.handleDelete(this.dataAdapter.deleteCardTemplate, this.loadAndPopulateCardTemplates, data.id);
+        break;
+      case 'UPDATE_SKILL':
+        this.handleUpdate(this.dataAdapter.updateSkill, this.loadAndPopulateSkills, data);
+        break;
+      case 'DELETE_SKILL':
+        this.handleDelete(this.dataAdapter.deleteSkill, this.loadAndPopulateSkills, data.id);
+        break;
+      case 'UPDATE_SKILL_TEMPLATE':
+        this.handleUpdate(this.dataAdapter.updateSkillTemplate, this.loadAndPopulateSkillTemplates, data);
+        break;
+      case 'DELETE_SKILL_TEMPLATE':
+        this.handleDelete(this.dataAdapter.deleteSkillTemplate, this.loadAndPopulateSkillTemplates, data.id);
+        break;
+    }
   }
 
   onLeave(client: Client, consented: boolean) {
-    console.log(client.sessionId, "left admin room!");
+    console.log(`${client.sessionId} left admin room!`);
   }
 
   onDispose() {
@@ -38,169 +74,123 @@ export class AdminRoom extends Room<AdminRoomState> {
 
   private async loadInitialData() {
     console.log("Loading initial data from file system...");
-    // Load all data and populate the state
-    await this.loadAndPopulateCards();
-    await this.loadAndPopulateCardPacks();
-    await this.loadAndPopulateCardTemplates();
-    await this.loadAndPopulateSkills();
-    await this.loadAndPopulateSkillTemplates();
-    console.log("Initial data loaded.");
-  }
-
-  // Helper to convert plain object to Schema instance
-  private copyToSchema<T extends object, S extends T>(data: T, schemaInstance: S): S {
-      for (const key in schemaInstance) {
-          if (Object.prototype.hasOwnProperty.call(data, key)) {
-              const value = (data as any)[key];
-              if (typeof value === 'object' && value !== null && !(value instanceof Date)) {
-                  // For simplicity, nested objects (like attributes, etc.) are converted to JSON strings or handled as Maps
-                  if (schemaInstance[key] instanceof Map) {
-                    Object.entries(value).forEach(([k, v]) => {
-                        (schemaInstance[key] as any).set(k, v);
-                    });
-                  } else if (key === 'schema' || key === 'effects' || key === 'unlockConditions') {
-                    (schemaInstance as any)[key] = JSON.stringify(value);
-                  }
-              } else if (value instanceof Date) {
-                  (schemaInstance as any)[key] = value.getTime();
-              }
-              else {
-                  (schemaInstance as any)[key] = value;
-              }
-          }
-      }
-      return schemaInstance;
-  }
-
-
-  // Card Handlers
-  private async loadAndPopulateCards() {
-    const cards = await this.dataAdapter.getCards();
-    this.state.cards.clear();
-    cards.forEach(cardData => {
-      const cardSchema = this.copyToSchema(cardData, new CardSchema());
-      this.state.cards.push(cardSchema);
-    });
-  }
-
-  private async handleUpdateCard(client: Client, cardData: Card) {
     try {
-      await this.dataAdapter.updateCard(cardData);
       await this.loadAndPopulateCards();
-    } catch (e) {
-      console.error("Failed to update card:", e);
+      await this.loadAndPopulateCardPacks();
+      await this.loadAndPopulateCardTemplates();
+      await this.loadAndPopulateSkills();
+      await this.loadAndPopulateSkillTemplates();
+      console.log("Initial data loaded.");
+    } catch (error) {
+      console.error("Error loading initial data:", error);
     }
   }
 
-  private async handleDeleteCard(client: Client, cardId: string) {
+  // --- Generic Handlers ---
+  private async handleUpdate<T>(updateFunc: (data: T) => Promise<void>, reloadFunc: () => Promise<void>, data: T) {
     try {
-        await this.dataAdapter.deleteCard(cardId);
-        await this.loadAndPopulateCards();
-    } catch (e) {
-        console.error("Failed to delete card:", e);
+      await updateFunc(data);
+      await reloadFunc.call(this);
+    } catch (e) { 
+      console.error("Failed to update:", e); 
     }
   }
 
-  // CardPack Handlers
-  private async loadAndPopulateCardPacks() {
-      const packs = await this.dataAdapter.getCardPacks();
-      this.state.cardPacks.clear();
-      packs.forEach(packData => {
-        const packSchema = this.copyToSchema(packData, new CardPackSchema());
-        this.state.cardPacks.push(packSchema);
+  private async handleDelete(deleteFunc: (id: string) => Promise<void>, reloadFunc: () => Promise<void>, id: string) {
+    try {
+      await deleteFunc(id);
+      await reloadFunc.call(this);
+    } catch (e) { 
+      console.error("Failed to delete:", e); 
+    }
+  }
+
+  private populateSchema<S extends object, T extends object>(schema: S, data: T): S {
+    try {
+      for (const key in schema) {
+        if (Object.prototype.hasOwnProperty.call(data, key)) {
+          const value = (data as any)[key];
+          const schemaField = (schema as any)[key];
+          
+          // Handle different value types safely
+          if (value === null || value === undefined) {
+            // Skip undefined/null values to prevent serialization errors
+            continue;
+          } else if (schemaField instanceof ArraySchema) {
+            // Clear and push new values for ArraySchema
+            schemaField.clear();
+            if (Array.isArray(value)) {
+              value.forEach(item => schemaField.push(item));
+            }
+          } else if (key === 'createdAt' || key === 'updatedAt') {
+            // Handle date fields specifically - convert to timestamp
+            if (typeof value === 'string') {
+              (schema as any)[key] = new Date(value).getTime();
+            } else if (value instanceof Date) {
+              (schema as any)[key] = value.getTime();
+            } else if (typeof value === 'number') {
+              (schema as any)[key] = value;
+            }
+          } else if (typeof value === 'object' && value !== null) {
+            // Convert complex objects to JSON strings for Colyseus compatibility
+            (schema as any)[key] = JSON.stringify(value);
+          } else {
+            (schema as any)[key] = value;
+          }
+        }
+      }
+      return schema;
+    } catch (error) {
+      console.error("Error populating schema:", error);
+      throw error;
+    }
+  }
+  
+  // --- Data Population ---
+  private async loadAndPopulate<S extends object, T extends object>(
+    stateArray: ArraySchema<S>,
+    schemaClass: new () => S,
+    fetchFunc: () => Promise<T[]>
+  ) {
+    try {
+      stateArray.clear();
+      const data = await fetchFunc();
+      
+      if (!Array.isArray(data)) {
+        console.warn("Fetch function returned non-array data:", data);
+        return;
+      }
+      
+      data.forEach(item => {
+        try {
+          const schemaItem = this.populateSchema(new schemaClass(), item);
+          stateArray.push(schemaItem);
+        } catch (error) {
+          console.error("Error populating individual item:", item, error);
+        }
       });
+    } catch (error) {
+      console.error("Error in loadAndPopulate:", error);
+    }
   }
 
-  private async handleUpdateCardPack(client: Client, packData: CardPack) {
-      try {
-          await this.dataAdapter.updateCardPack(packData);
-          await this.loadAndPopulateCardPacks();
-      } catch (e) {
-          console.error("Failed to update card pack:", e);
-      }
+  private async loadAndPopulateCards() {
+    await this.loadAndPopulate(this.state.cards, CardSchema, this.dataAdapter.getCards);
   }
-
-  private async handleDeleteCardPack(client: Client, packId: string) {
-      try {
-          await this.dataAdapter.deleteCardPack(packId);
-          await this.loadAndPopulateCardPacks();
-      } catch (e) {
-          console.error("Failed to delete card pack:", e);
-      }
+  
+  private async loadAndPopulateCardPacks() {
+    await this.loadAndPopulate(this.state.cardPacks, CardPackSchema, this.dataAdapter.getCardPacks);
   }
-
-  // CardTemplate Handlers
-    private async loadAndPopulateCardTemplates() {
-        const templates = await this.dataAdapter.getCardTemplates();
-        this.state.cardTemplates.clear();
-        templates.forEach(templateData => {
-            const templateSchema = this.copyToSchema(templateData, new CardTemplateSchema());
-            this.state.cardTemplates.push(templateSchema);
-        });
-    }
-
-    private async handleUpdateCardTemplate(client: Client, templateData: CardTemplate) {
-        try {
-            await this.dataAdapter.updateCardTemplate(templateData);
-            await this.loadAndPopulateCardTemplates();
-        } catch (e) {
-            console.error("Failed to update card template:", e);
-        }
-    }
-
-    // Skill Handlers
-    private async loadAndPopulateSkills() {
-        const skills = await this.dataAdapter.getSkills();
-        this.state.skills.clear();
-        skills.forEach(skillData => {
-            const skillSchema = this.copyToSchema(skillData, new SkillSchema());
-            this.state.skills.push(skillSchema);
-        });
-    }
-
-    private async handleUpdateSkill(client: Client, skillData: Skill) {
-        try {
-            await this.dataAdapter.updateSkill(skillData);
-            await this.loadAndPopulateSkills();
-        } catch (e) {
-            console.error("Failed to update skill:", e);
-        }
-    }
-
-    private async handleDeleteSkill(client: Client, skillId: string) {
-        try {
-            await this.dataAdapter.deleteSkill(skillId);
-            await this.loadAndPopulateSkills();
-        } catch (e) {
-            console.error("Failed to delete skill:", e);
-        }
-    }
-    
-    // SkillTemplate Handlers
-    private async loadAndPopulateSkillTemplates() {
-        const templates = await this.dataAdapter.getSkillTemplates();
-        this.state.skillTemplates.clear();
-        templates.forEach(templateData => {
-            const templateSchema = this.copyToSchema(templateData, new SkillTemplateSchema());
-            this.state.skillTemplates.push(templateSchema);
-        });
-    }
-
-    private async handleUpdateSkillTemplate(client: Client, templateData: SkillTemplate) {
-        try {
-            await this.dataAdapter.updateSkillTemplate(templateData);
-            await this.loadAndPopulateSkillTemplates();
-        } catch (e) {
-            console.error("Failed to update skill template:", e);
-        }
-    }
-
-    private async handleDeleteSkillTemplate(client: Client, templateId: string) {
-        try {
-            await this.dataAdapter.deleteSkillTemplate(templateId);
-            await this.loadAndPopulateSkillTemplates();
-        } catch (e) {
-            console.error("Failed to delete skill template:", e);
-        }
-    }
+  
+  private async loadAndPopulateCardTemplates() {
+    await this.loadAndPopulate(this.state.cardTemplates, CardTemplateSchema, this.dataAdapter.getCardTemplates);
+  }
+  
+  private async loadAndPopulateSkills() {
+    await this.loadAndPopulate(this.state.skills, SkillSchema, this.dataAdapter.getSkills);
+  }
+  
+  private async loadAndPopulateSkillTemplates() {
+    await this.loadAndPopulate(this.state.skillTemplates, SkillTemplateSchema, this.dataAdapter.getSkillTemplates);
+  }
 } 

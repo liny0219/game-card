@@ -1,0 +1,57 @@
+[
+  {
+    "id": "basic-attack",
+    "name": "基础攻击",
+    "description": "简单的物理攻击",
+    "rarity": "N",
+    "skillType": "ATTACK",
+    "iconUrl": "/assets/skill_basic_attack.png",
+    "templateId": "attack-skill",
+    "attributes": {
+      "damage": 50,
+      "criticalChance": 0.05
+    },
+    "maxLevel": 10,
+    "levelScaling": {
+      "damage": 5,
+      "criticalChance": 0.01
+    },
+    "unlockConditions": [
+      {
+        "type": "level",
+        "value": 1,
+        "description": "角色等级达到1级"
+      }
+    ],
+    "gameplayType": "DEFAULT",
+    "createdAt": "2025-07-23T16:06:22.295Z",
+    "updatedAt": "2025-07-23T16:06:22.295Z"
+  },
+  {
+    "id": "heal-spell",
+    "name": "治疗术",
+    "description": "恢复目标生命值",
+    "rarity": "R",
+    "skillType": "HEAL",
+    "iconUrl": "/assets/skill_heal.png",
+    "templateId": "heal-skill",
+    "attributes": {
+      "healing": 60,
+      "overheal": false
+    },
+    "maxLevel": 8,
+    "levelScaling": {
+      "healing": 8
+    },
+    "unlockConditions": [
+      {
+        "type": "level",
+        "value": 5,
+        "description": "角色等级达到5级"
+      }
+    ],
+    "gameplayType": "DEFAULT",
+    "createdAt": "2025-07-23T16:06:22.295Z",
+    "updatedAt": "2025-07-23T16:06:22.295Z"
+  }
+]

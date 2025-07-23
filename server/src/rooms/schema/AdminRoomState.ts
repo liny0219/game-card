@@ -1,23 +1,7 @@
-import { Schema, MapSchema, ArraySchema, type } from "@colyseus/schema";
-import {
-  CardRarity,
-  CurrencyType,
-  GameplayType,
-  SkillRarity,
-  SkillType,
-  SkillTargetType,
+import { Schema, ArraySchema, type } from "@colyseus/schema";
+import { 
+  CardRarity, CurrencyType, GameplayType, SkillRarity, SkillType 
 } from "../../types/index.js";
-
-
-// Since records and nested objects need to be Schemas themselves,
-// we redefine the interfaces as Schema classes.
-
-class PitySystemSchema extends Schema {
-  @type("number") maxPity!: number;
-  @type(["string"]) guaranteedCards = new ArraySchema<string>();
-  @type("number") softPityStart!: number;
-  @type("boolean") resetOnTrigger!: boolean;
-}
 
 export class CardSchema extends Schema {
   @type("string") id!: string;
@@ -25,9 +9,10 @@ export class CardSchema extends Schema {
   @type("string") description!: string;
   @type("string") rarity!: CardRarity;
   @type("string") imageUrl!: string;
-  @type({ map: "string" }) attributes = new MapSchema<any>();
+  @type("string") attributes!: string; // JSON
   @type("string") templateId!: string;
   @type("string") gameplayType!: GameplayType;
+  @type("string") skillBindings?: string; // JSON
   @type("number") createdAt!: number;
   @type("number") updatedAt!: number;
 }
@@ -41,9 +26,9 @@ export class CardPackSchema extends Schema {
   @type("string") currency!: CurrencyType;
   @type("boolean") isActive!: boolean;
   @type("string") gameplayType!: GameplayType;
-  @type({ map: "number" }) cardProbabilities = new MapSchema<number>();
+  @type("string") cardProbabilities!: string; // JSON
   @type(["string"]) availableCards = new ArraySchema<string>();
-  @type(PitySystemSchema) pitySystem?: PitySystemSchema;
+  @type("string") pitySystem?: string; // JSON
   @type("number") createdAt!: number;
   @type("number") updatedAt!: number;
 }
@@ -52,8 +37,9 @@ export class CardTemplateSchema extends Schema {
   @type("string") id!: string;
   @type("string") name!: string;
   @type("string") description!: string;
-  @type("string") schema!: string; // JSON schema as a string
+  @type("string") schema!: string; // JSON
   @type("string") gameplayType!: GameplayType;
+  @type("string") skillBindings?: string; // JSON
   @type("number") createdAt!: number;
   @type("number") updatedAt!: number;
 }
@@ -66,11 +52,10 @@ export class SkillSchema extends Schema {
     @type("string") skillType!: SkillType;
     @type("string") iconUrl!: string;
     @type("string") templateId!: string;
-    @type({ map: "string" }) attributes = new MapSchema<any>();
+    @type("string") attributes!: string; // JSON
     @type("number") maxLevel!: number;
-    @type({ map: "number" }) levelScaling = new MapSchema<number>();
-    // unlockConditions is complex, sending as JSON string for simplicity
-    @type("string") unlockConditions!: string;
+    @type("string") levelScaling!: string; // JSON
+    @type("string") unlockConditions!: string; // JSON
     @type("string") gameplayType!: GameplayType;
     @type("number") createdAt!: number;
     @type("number") updatedAt!: number;
@@ -81,7 +66,6 @@ export class SkillTemplateSchema extends Schema {
     @type("string") name!: string;
     @type("string") description!: string;
     @type("string") skillType!: SkillType;
-    // For simplicity, complex fields are stored as JSON strings
     @type("string") targetType!: string;
     @type("string") effects!: string; 
     @type("string") schema!: string;
@@ -89,7 +73,6 @@ export class SkillTemplateSchema extends Schema {
     @type("number") createdAt!: number;
     @type("number") updatedAt!: number;
 }
-
 
 export class AdminRoomState extends Schema {
   @type([CardSchema]) cards = new ArraySchema<CardSchema>();
